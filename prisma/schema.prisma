@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model delivery_logs {
+  id            String   @id @db.Char(36)
+  user_id       String   @db.Char(36)
+  method        String   @db.VarChar(10)
+  resource_type String   @db.VarChar(100)
+  resource_id   String?  @db.Char(36)
+  endpoint      String   @db.VarChar(500)
+  status_code   Int      @db.SmallInt
+  status        String   @db.VarChar(10)
+  time_ms       Int
+  payload       Json
+  response      Json
+  sent_at       DateTime @default(now())
+  users         users    @relation(fields: [user_id], references: [id], map: "fk_delivery_logs_user")
+
+  @@index([resource_type], map: "idx_delivery_logs_resource")
+  @@index([sent_at], map: "idx_delivery_logs_sent_at")
+  @@index([status], map: "idx_delivery_logs_status")
+  @@index([user_id], map: "idx_delivery_logs_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model satu_sehat_tokens {
+  id         Int      @id @default(autoincrement()) @db.UnsignedTinyInt
+  token      String   @db.Text
+  expires_at DateTime
+  created_at DateTime @default(now())
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  id            String          @id @db.Char(36)
+  username      String          @unique(map: "uq_users_username") @db.VarChar(100)
+  password      String          @db.VarChar(255)
+  role          String          @default("operator") @db.VarChar(20)
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @default(now())
+  delivery_logs delivery_logs[]
+}

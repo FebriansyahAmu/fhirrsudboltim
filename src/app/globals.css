@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+/*
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -23,4 +23,55 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+} */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-800;
+
+    font-family:
+      var(--font-dm-sans),
+      system-ui,
+      -apple-system,
+      sans-serif;
+
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Monospace untuk kode & ID */
+  code,
+  pre,
+  .font-mono {
+    font-family: var(--font-mono), "Cascadia Code", "Fira Code", monospace;
+  }
+}
+
+@layer components {
+  /* Input base — digunakan via className langsung di Tailwind */
+  .input-base {
+    @apply w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5
+           text-sm text-slate-800 placeholder-slate-300
+           focus:outline-none focus:ring-2 focus:ring-teal-400/40 focus:border-teal-400
+           transition-all duration-150;
+  }
+
+  .input-error {
+    @apply w-full bg-white border border-red-300 rounded-xl px-3 py-2.5
+           text-sm text-slate-800 placeholder-slate-300
+           focus:outline-none focus:ring-2 focus:ring-red-300/40 focus:border-red-400
+           transition-all duration-150;
+  }
 }
