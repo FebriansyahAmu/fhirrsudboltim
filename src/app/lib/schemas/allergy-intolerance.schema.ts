@@ -92,10 +92,10 @@ export const allergyIntoleranceFormSchema = Yup.object({
   // ── Kategori alergen ──
   category: Yup.string()
     .oneOf(
-      ["food", "medication", "environment", "biologic"],
+      ["", "food", "medication", "environment", "biologic"],
       "Kategori tidak valid",
     )
-    .required("Kategori alergen wajib dipilih"),
+    .default(""),
 
   // ── Kode SNOMED substansi penyebab alergi ──
   codeSnomed: Yup.string()
@@ -157,7 +157,7 @@ export type AllergyIntoleranceFormValues = {
   identifierValue: string;
   clinicalStatusCode: "active" | "inactive" | "resolved";
   verificationStatusCode: "unconfirmed" | "confirmed" | "refuted" | "entered-in-error";
-  category: "food" | "medication" | "environment" | "biologic";
+  category: "" | "food" | "medication" | "environment" | "biologic";
   codeSnomed: string;
   codeDisplay: string;
   codeText?: string;

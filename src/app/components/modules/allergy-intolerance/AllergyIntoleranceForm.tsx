@@ -342,7 +342,7 @@ function MutationForm({
       identifierValue: "",
       clinicalStatusCode: "active",
       verificationStatusCode: "confirmed",
-      category: "food",
+      category: "",
       codeSnomed: "89811004",
       codeDisplay: "Gluten",
       codeText: "Alergi bahan gluten, khususnya ketika makan roti gandum",
@@ -416,8 +416,10 @@ function MutationForm({
         ],
       },
 
-      // Kategori sebagai array (FHIR spec menggunakan array)
-      category: [data.category as AllergyIntoleranceCategory],
+      // Kategori sebagai array (FHIR spec menggunakan array) — omit jika tidak dipilih
+      ...(data.category
+        ? { category: [data.category as AllergyIntoleranceCategory] }
+        : {}),
 
       // Kode substansi alergen (SNOMED CT)
       code: {
@@ -498,7 +500,9 @@ function MutationForm({
           { system: "...", code: values.verificationStatusCode, display: "" },
         ],
       },
-      category: [values.category],
+      ...(values.category
+        ? { category: [values.category as AllergyIntoleranceCategory] }
+        : {}),
       code: {
         coding: [
           {
@@ -643,6 +647,7 @@ function MutationForm({
                 {...register("category")}
                 className={ic(!!errors.category)}
               >
+                <option value="">Tidak Ada</option>
                 <option value="food">Food — Makanan</option>
                 <option value="medication">Medication — Obat-obatan</option>
                 <option value="environment">Environment — Lingkungan</option>

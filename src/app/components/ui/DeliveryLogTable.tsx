@@ -188,6 +188,91 @@ function LogSection({
 }
 
 // ─────────────────────────────────────────────
+// Pagination
+// ─────────────────────────────────────────────
+const PAGE_SIZE = 10;
+
+interface PaginationProps {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onChange: (p: number) => void;
+}
+
+function Pagination({ page, totalPages, total, pageSize, onChange }: PaginationProps) {
+  if (totalPages <= 1) return null;
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  // Tampilkan maks 5 nomor halaman di sekitar halaman aktif
+  const pages: (number | "…")[] = [];
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - page) <= 1) {
+      pages.push(i);
+    } else if (pages[pages.length - 1] !== "…") {
+      pages.push("…");
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+      <span className="text-[11px] text-slate-400">
+        {from}–{to} dari {total} log
+      </span>
+
+      <div className="flex items-center gap-1">
+        {/* Prev */}
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-slate-200"
+          aria-label="Halaman sebelumnya"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {/* Nomor halaman */}
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="w-7 h-7 flex items-center justify-center text-[11px] text-slate-400">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p)}
+              className={`w-7 h-7 flex items-center justify-center rounded-lg text-[11px] font-medium transition-all ${
+                p === page
+                  ? "bg-teal-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-white hover:text-slate-800 border border-transparent hover:border-slate-200"
+              }`}
+            >
+              {p}
+            </button>
+          ),
+        )}
+
+        {/* Next */}
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-slate-200"
+          aria-label="Halaman berikutnya"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Komponen Utama: DeliveryLogTable
 // ─────────────────────────────────────────────
 interface DeliveryLogTableProps {
@@ -203,6 +288,7 @@ export default function DeliveryLogTable({
     "all",
   );
   const [fetching, setFetching] = useState(false);
+  const [page, setPage] = useState(1);
 
   const loadLogs = useCallback(async () => {
     setFetching(true);
@@ -226,12 +312,23 @@ export default function DeliveryLogTable({
     loadLogs();
   }, [loadLogs]);
 
-  const handleClear = () => setLogs([]);
+  const handleClear = () => {
+    setLogs([]);
+    setPage(1);
+  };
 
   const filtered = logs.filter((l) => {
     if (filterStatus === "all") return true;
     return l.status === filterStatus;
   });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const handleFilterChange = (f: "all" | "success" | "error") => {
+    setFilterStatus(f);
+    setPage(1);
+  };
 
   const successCount = logs.filter((l) => l.status === "success").length;
   const errorCount = logs.filter((l) => l.status === "error").length;
@@ -265,7 +362,7 @@ export default function DeliveryLogTable({
               {(["all", "success", "error"] as const).map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilterStatus(f)}
+                  onClick={() => handleFilterChange(f)}
                   className={`px-2.5 py-1 text-[11px] font-medium rounded-lg capitalize transition-all ${
                     filterStatus === f
                       ? "bg-white text-slate-800 shadow-sm"
@@ -409,7 +506,7 @@ export default function DeliveryLogTable({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((log) => (
+                {paginated.map((log) => (
                   <tr
                     key={log.id}
                     className="hover:bg-slate-50 transition-colors group"
@@ -456,6 +553,14 @@ export default function DeliveryLogTable({
             </table>
           </div>
         )}
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={filtered.length}
+          pageSize={PAGE_SIZE}
+          onChange={setPage}
+        />
       </div>
 
       {/* Modal detail */}
