@@ -149,22 +149,78 @@ export interface DeliveryStats {
   success: number;
   failed: number;
   today: number;
+  todaySuccess: number;
+  todayFailed: number;
+  avgResponseMs: number | null;
+  lastActivityAt: Date | null;
 }
 
 export async function getDeliveryStats(userId: string): Promise<DeliveryStats> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [total, success, failed, today] = await Promise.all([
+  const [
+    total,
+    success,
+    failed,
+    today,
+    todaySuccess,
+    todayFailed,
+    aggTime,
+    lastLog,
+  ] = await Promise.all([
     prisma.delivery_logs.count({ where: { user_id: userId } }),
-    prisma.delivery_logs.count({
-      where: { user_id: userId, status: "success" },
-    }),
+    prisma.delivery_logs.count({ where: { user_id: userId, status: "success" } }),
     prisma.delivery_logs.count({ where: { user_id: userId, status: "error" } }),
-    prisma.delivery_logs.count({
-      where: { user_id: userId, sent_at: { gte: todayStart } },
+    prisma.delivery_logs.count({ where: { user_id: userId, sent_at: { gte: todayStart } } }),
+    prisma.delivery_logs.count({ where: { user_id: userId, status: "success", sent_at: { gte: todayStart } } }),
+    prisma.delivery_logs.count({ where: { user_id: userId, status: "error", sent_at: { gte: todayStart } } }),
+    prisma.delivery_logs.aggregate({ where: { user_id: userId }, _avg: { time_ms: true } }),
+    prisma.delivery_logs.findFirst({
+      where: { user_id: userId },
+      orderBy: { sent_at: "desc" },
+      select: { sent_at: true },
     }),
   ]);
 
-  return { total, success, failed, today };
+  return {
+    total,
+    success,
+    failed,
+    today,
+    todaySuccess,
+    todayFailed,
+    avgResponseMs: aggTime._avg.time_ms ?? null,
+    lastActivityAt: lastLog?.sent_at ?? null,
+  };
+}
+
+// ─────────────────────────────────────────────
+// Ambil log terbaru untuk recent activity dashboard
+// ─────────────────────────────────────────────
+export interface RecentLog {
+  id: string;
+  method: string;
+  resource_type: string;
+  status_code: number;
+  status: string;
+  time_ms: number;
+  sent_at: Date;
+}
+
+export async function getRecentLogs(userId: string, limit = 6): Promise<RecentLog[]> {
+  return prisma.delivery_logs.findMany({
+    where: { user_id: userId },
+    orderBy: { sent_at: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      method: true,
+      resource_type: true,
+      status_code: true,
+      status: true,
+      time_ms: true,
+      sent_at: true,
+    },
+  });
 }

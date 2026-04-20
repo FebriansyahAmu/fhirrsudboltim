@@ -1,7 +1,7 @@
 import DashboardLayout from "@/app/components/layout/DashboardLayout";
 import { FHIR_MODULES } from "@/app/lib/constants/modules";
 import { getSession } from "@/app/lib/session";
-import { getDeliveryStats } from "@/app/lib/dal/fhir.dal";
+import { getDeliveryStats, getRecentLogs } from "@/app/lib/dal/fhir.dal";
 import type { HttpMethod } from "@/app/lib/types/api";
 import Link from "next/link";
 
@@ -9,8 +9,35 @@ import Link from "next/link";
 // Helpers
 // ─────────────────────────────────────────────
 
-function formatCount(n: number): string {
+function fmt(n: number) {
   return n.toLocaleString("id-ID");
+}
+
+function fmtMs(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function fmtDate(date: Date): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function fmtRelative(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  if (mins < 1) return "baru saja";
+  if (mins < 60) return `${mins} menit lalu`;
+  if (hours < 24) return `${hours} jam lalu`;
+  return `${days} hari lalu`;
 }
 
 // ─────────────────────────────────────────────
@@ -47,69 +74,8 @@ const MODULE_ACCENT: Record<string, { from: string; border: string }> = {
   DiagnosticReport: { from: "from-fuchsia-50", border: "border-fuchsia-100" },
   ServiceRequest: { from: "from-purple-50", border: "border-purple-100" },
   EpisodeOfCare: { from: "from-emerald-50", border: "border-emerald-100" },
-  QuestionnaireResponse: {
-    from: "from-orange-50",
-    border: "border-orange-100",
-  },
+  QuestionnaireResponse: { from: "from-orange-50", border: "border-orange-100" },
 };
-
-// ─────────────────────────────────────────────
-// Stat card definition
-// ─────────────────────────────────────────────
-
-interface StatCard {
-  label: string;
-  value: string;
-  sub: string;
-  icon: string;
-  iconBg: string;
-  valueCls: string;
-}
-
-function buildStatCards(
-  total: number,
-  success: number,
-  failed: number,
-  today: number,
-): StatCard[] {
-  const successRate = total > 0 ? ((success / total) * 100).toFixed(1) : "0.0";
-  const failRate = total > 0 ? ((failed / total) * 100).toFixed(1) : "0.0";
-
-  return [
-    {
-      label: "Total Kiriman",
-      value: formatCount(total),
-      sub: "Semua resource FHIR",
-      icon: "📤",
-      iconBg: "bg-slate-100",
-      valueCls: "text-slate-900",
-    },
-    {
-      label: "Berhasil",
-      value: formatCount(success),
-      sub: `${successRate}% dari total`,
-      icon: "✅",
-      iconBg: "bg-emerald-50",
-      valueCls: "text-emerald-700",
-    },
-    {
-      label: "Gagal",
-      value: formatCount(failed),
-      sub: `${failRate}% dari total`,
-      icon: "❌",
-      iconBg: "bg-red-50",
-      valueCls: "text-red-600",
-    },
-    {
-      label: "Hari Ini",
-      value: formatCount(today),
-      sub: "Kiriman sejak 00:00",
-      icon: "📅",
-      iconBg: "bg-blue-50",
-      valueCls: "text-blue-700",
-    },
-  ];
-}
 
 // ─────────────────────────────────────────────
 // Page (Server Component)
@@ -118,22 +84,70 @@ function buildStatCards(
 export default async function DashboardPage() {
   const session = await getSession();
 
-  const stats = session
-    ? await getDeliveryStats(session.userId)
-    : { total: 0, success: 0, failed: 0, today: 0 };
+  const emptyStats = {
+    total: 0, success: 0, failed: 0, today: 0,
+    todaySuccess: 0, todayFailed: 0, avgResponseMs: null, lastActivityAt: null,
+  };
 
-  const statCards = buildStatCards(
-    stats.total,
-    stats.success,
-    stats.failed,
-    stats.today,
-  );
+  const [stats, recentLogs] = session
+    ? await Promise.all([
+        getDeliveryStats(session.userId),
+        getRecentLogs(session.userId, 6),
+      ])
+    : [emptyStats, []];
+
+  const successRate = stats.total > 0
+    ? ((stats.success / stats.total) * 100).toFixed(1)
+    : "0.0";
+  const failRate = stats.total > 0
+    ? ((stats.failed / stats.total) * 100).toFixed(1)
+    : "0.0";
 
   const activeModules = FHIR_MODULES.filter((m) => m.hasPage !== false).length;
+
+  const statCards = [
+    {
+      label: "Total Kiriman",
+      value: fmt(stats.total),
+      sub: stats.lastActivityAt
+        ? `Terakhir: ${fmtRelative(stats.lastActivityAt)}`
+        : "Belum ada kiriman",
+      icon: "📤",
+      iconBg: "bg-slate-100",
+      valueCls: "text-slate-900",
+    },
+    {
+      label: "Berhasil",
+      value: fmt(stats.success),
+      sub: `${successRate}% dari total`,
+      icon: "✅",
+      iconBg: "bg-emerald-50",
+      valueCls: "text-emerald-700",
+    },
+    {
+      label: "Gagal",
+      value: fmt(stats.failed),
+      sub: `${failRate}% dari total`,
+      icon: "❌",
+      iconBg: "bg-red-50",
+      valueCls: stats.failed > 0 ? "text-red-600" : "text-slate-400",
+    },
+    {
+      label: "Hari Ini",
+      value: fmt(stats.today),
+      sub: stats.today > 0
+        ? `${fmt(stats.todaySuccess)} berhasil · ${fmt(stats.todayFailed)} gagal`
+        : "Belum ada kiriman hari ini",
+      icon: "📅",
+      iconBg: "bg-blue-50",
+      valueCls: stats.today > 0 ? "text-blue-700" : "text-slate-400",
+    },
+  ];
 
   return (
     <DashboardLayout title="Dashboard" breadcrumbs={[{ label: "Dashboard" }]}>
       <div className="space-y-8">
+
         {/* ── Header ── */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
@@ -144,7 +158,12 @@ export default async function DashboardPage() {
               Pantau pengiriman data FHIR ke platform Satu Sehat Kemenkes RI
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {stats.avgResponseMs !== null && (
+              <span className="text-xs text-slate-500 bg-white border border-slate-200 px-3 py-2 rounded-xl font-medium shadow-sm">
+                Avg response: {fmtMs(stats.avgResponseMs)}
+              </span>
+            )}
             {session && (
               <span className="text-xs text-slate-500 bg-white border border-slate-200 px-3 py-2 rounded-xl font-medium shadow-sm">
                 {session.username}
@@ -153,9 +172,6 @@ export default async function DashboardPage() {
             <span className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Terhubung
-            </span>
-            <span className="text-xs text-slate-500 bg-white border border-slate-200 px-3 py-2 rounded-xl font-medium shadow-sm">
-              Env: Development
             </span>
           </div>
         </div>
@@ -168,18 +184,14 @@ export default async function DashboardPage() {
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between mb-3">
-                <span
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center text-base leading-none ${stat.iconBg}`}
-                >
+                <span className={`w-8 h-8 rounded-xl flex items-center justify-center text-base leading-none ${stat.iconBg}`}>
                   {stat.icon}
                 </span>
-                <span className="text-[10px] font-medium text-slate-400 text-right leading-tight max-w-20">
+                <span className="text-[10px] font-medium text-slate-400 text-right leading-tight max-w-24">
                   {stat.sub}
                 </span>
               </div>
-              <p
-                className={`text-2xl font-bold tabular-nums tracking-tight ${stat.valueCls}`}
-              >
+              <p className={`text-2xl font-bold tabular-nums tracking-tight ${stat.valueCls}`}>
                 {stat.value}
               </p>
               <p className="text-xs text-slate-400 font-medium mt-1">
@@ -188,6 +200,60 @@ export default async function DashboardPage() {
             </div>
           ))}
         </div>
+
+        {/* ── Aktivitas Terakhir ── */}
+        {recentLogs.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
+                Aktivitas Terakhir
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                {stats.lastActivityAt ? fmtDate(stats.lastActivityAt) : ""}
+              </span>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="divide-y divide-slate-50">
+                {recentLogs.map((log) => {
+                  const isSuccess = log.status_code >= 200 && log.status_code < 300;
+                  return (
+                    <div key={log.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                      {/* Method */}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${METHOD_PILL[log.method] ?? "bg-slate-100 text-slate-600"}`}>
+                        {log.method}
+                      </span>
+
+                      {/* Resource type */}
+                      <span className="text-sm font-medium text-slate-700 flex-1 truncate">
+                        {log.resource_type}
+                      </span>
+
+                      {/* Status code */}
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full tabular-nums shrink-0 ${
+                        isSuccess
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-red-50 text-red-600"
+                      }`}>
+                        {log.status_code}
+                      </span>
+
+                      {/* Response time */}
+                      <span className="text-[11px] text-slate-400 font-mono shrink-0 hidden sm:block">
+                        {fmtMs(log.time_ms)}
+                      </span>
+
+                      {/* Relative time */}
+                      <span className="text-[11px] text-slate-400 shrink-0 hidden md:block min-w-24 text-right">
+                        {fmtRelative(log.sent_at)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Modules Grid ── */}
         <div>
@@ -204,7 +270,7 @@ export default async function DashboardPage() {
             {[...FHIR_MODULES]
               .sort((a, b) => {
                 const rank = (m: typeof a) =>
-                  m.hasPage === false ? 1 : m.badge === "Soon" ? 1 : 0;
+                  m.hasPage === false || m.badge === "Soon" ? 1 : 0;
                 return rank(a) - rank(b);
               })
               .map((mod) => {
@@ -212,36 +278,25 @@ export default async function DashboardPage() {
                   from: "from-slate-50",
                   border: "border-slate-100",
                 };
-                const isDisabled =
-                  mod.hasPage === false || mod.badge === "Soon";
+                const isDisabled = mod.hasPage === false || mod.badge === "Soon";
 
                 const card = (
-                  <div
-                    className={`group bg-linear-to-br ${accent.from} to-white border ${accent.border} rounded-2xl p-5 transition-all duration-200 ${
-                      isDisabled
-                        ? "opacity-50 cursor-not-allowed"
-                        : "hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
-                    }`}
-                  >
+                  <div className={`group bg-linear-to-br ${accent.from} to-white border ${accent.border} rounded-2xl p-5 transition-all duration-200 ${
+                    isDisabled
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                  }`}>
                     {/* Top row */}
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl leading-none">
-                          {mod.icon}
-                        </span>
+                        <span className="text-2xl leading-none">{mod.icon}</span>
                         <div>
-                          <p className="text-sm font-bold text-slate-800">
-                            {mod.name}
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            {mod.group}
-                          </p>
+                          <p className="text-sm font-bold text-slate-800">{mod.name}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">{mod.group}</p>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_STYLE[mod.badge]}`}
-                        >
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_STYLE[mod.badge]}`}>
                           {mod.badge}
                         </span>
                         {isDisabled && mod.badge !== "Soon" && (
@@ -252,40 +307,21 @@ export default async function DashboardPage() {
                       </div>
                     </div>
 
-                    {/* Desc */}
-                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                      {mod.desc}
-                    </p>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">{mod.desc}</p>
 
-                    {/* Methods */}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {mod.methods.map((m: HttpMethod) => (
-                        <span
-                          key={m}
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${METHOD_PILL[m]}`}
-                        >
+                        <span key={m} className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${METHOD_PILL[m]}`}>
                           {m}
                         </span>
                       ))}
                     </div>
 
-                    {/* Arrow */}
                     {!isDisabled && (
                       <div className="flex items-center gap-1 mt-4 text-teal-600 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
                         Buka modul
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                        >
-                          <path
-                            d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
                     )}
@@ -295,9 +331,7 @@ export default async function DashboardPage() {
                 return isDisabled ? (
                   <div key={mod.name}>{card}</div>
                 ) : (
-                  <Link key={mod.name} href={mod.path}>
-                    {card}
-                  </Link>
+                  <Link key={mod.name} href={mod.path}>{card}</Link>
                 );
               })}
           </div>
