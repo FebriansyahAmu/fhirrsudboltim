@@ -21,6 +21,7 @@ const ALLOWED_RESOURCES = new Set([
   "Patient",
   "Practitioner",
   "Procedure",
+  "ImagingStudy",
   "Questionnaire",
   "QuestionnaireResponse",
   "ServiceRequest",

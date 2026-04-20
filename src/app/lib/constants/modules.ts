@@ -119,6 +119,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     badge: "Beta",
   },
   {
+    name: "ImagingStudy",
+    path: "/imaging-study",
+    icon: "🩻",
+    desc: "Pencarian studi pencitraan radiologi (DICOM)",
+    group: "Klinis",
+    methods: ["GET"],
+    badge: "Active",
+  },
+  {
     name: "DiagnosticReport",
     path: "/diagnostic-report",
     icon: "📊",

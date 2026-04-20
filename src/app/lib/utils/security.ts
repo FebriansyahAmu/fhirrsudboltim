@@ -52,6 +52,7 @@ export function buildSafeApiUrl(
     "Patient",
     "Practitioner",
     "Procedure",
+    "ImagingStudy",
     "Questionnaire",
     "QuestionnaireResponse",
     "ServiceRequest",

@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   "/location",
   "/service-request",
   "/patient",
+  "/imaging-study",
   "/api/fhir",
   "/api/logs",
 ];
