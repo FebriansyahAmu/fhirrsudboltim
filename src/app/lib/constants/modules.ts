@@ -173,6 +173,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     methods: [],
     badge: "Active",
   },
+  {
+    name: "DicomRouter",
+    path: "/dicom-router",
+    icon: "📡",
+    desc: "Kirim file DICOM ke DICOM Router via storescu (DCMTK)",
+    group: "Utilitas",
+    methods: [],
+    badge: "Active",
+  },
 ];
 
 export const MODULE_GROUPS = [

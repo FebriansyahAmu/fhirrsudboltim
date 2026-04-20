@@ -20,6 +20,7 @@ const PROTECTED_PREFIXES = [
   "/patient",
   "/imaging-study",
   "/jpg-to-dcm",
+  "/dicom-router",
   "/api/fhir",
   "/api/tools",
   "/api/logs",
