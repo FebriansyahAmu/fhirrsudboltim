@@ -126,8 +126,19 @@ function ErrorIcon() {
       fill="none"
       className="shrink-0"
     >
-      <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M5.5 3.5V5.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle
+        cx="5.5"
+        cy="5.5"
+        r="4.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <path
+        d="M5.5 3.5V5.8"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
       <circle cx="5.5" cy="7.5" r="0.5" fill="currentColor" />
     </svg>
   );
@@ -163,10 +174,17 @@ const SUBMIT_COLOR: Partial<Record<HttpMethod, string>> = {
   GET: "bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200",
   POST: "bg-teal-600 hover:bg-teal-700 text-white shadow-sm shadow-teal-200",
   PUT: "bg-amber-600 hover:bg-amber-700 text-white shadow-sm shadow-amber-200",
-  PATCH: "bg-violet-600 hover:bg-violet-700 text-white shadow-sm shadow-violet-200",
+  PATCH:
+    "bg-violet-600 hover:bg-violet-700 text-white shadow-sm shadow-violet-200",
 };
 
-function SubmitButton({ method, loading }: { method: HttpMethod; loading: boolean }) {
+function SubmitButton({
+  method,
+  loading,
+}: {
+  method: HttpMethod;
+  loading: boolean;
+}) {
   const colorCls = loading
     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
     : (SUBMIT_COLOR[method] ?? "bg-slate-600 hover:bg-slate-700 text-white");
@@ -211,7 +229,9 @@ function GetForm({
     handleSubmit,
     formState: { errors },
   } = useForm<ServiceRequestGetValues>({
-    resolver: yupResolver(serviceRequestGetSchema) as unknown as Resolver<ServiceRequestGetValues>,
+    resolver: yupResolver(
+      serviceRequestGetSchema,
+    ) as unknown as Resolver<ServiceRequestGetValues>,
   });
 
   const onValid = (data: ServiceRequestGetValues) => {
@@ -276,6 +296,19 @@ function GetForm({
 }
 
 // ─────────────────────────────────────────────
+// Helper: generate nomor ServiceRequest / ACSN
+// Format: RAD{YY}{MM}{DD}1{seq3}
+// Contoh 20-Apr-2026 seq 1 → RAD2604201001
+// ─────────────────────────────────────────────
+function buildSRCode(seq = 1): string {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `RAD${yy}${mm}${dd}1${String(seq).padStart(3, "0")}`;
+}
+
+// ─────────────────────────────────────────────
 // Mutation form — POST / PUT / PATCH
 // ─────────────────────────────────────────────
 
@@ -286,13 +319,18 @@ function MutationForm({
 }: {
   method: HttpMethod;
   loading: boolean;
-  onSubmit: (params: { payload: ServiceRequestPayload; resourceId?: string }) => void;
+  onSubmit: (params: {
+    payload: ServiceRequestPayload;
+    resourceId?: string;
+  }) => void;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+  const [srSeq, setSrSeq] = useState(1);
 
   const needsId = method === "PUT" || method === "PATCH";
+  const orgId = process.env.NEXT_PUBLIC_SATU_SEHAT_ORG_ID ?? "ORG_ID_NOT_SET";
 
   const now = new Date().toISOString().slice(0, 16);
   const defaultPreset = "usg_ginjal" as ImagingPresetKey;
@@ -306,7 +344,9 @@ function MutationForm({
     getValues,
     formState: { errors },
   } = useForm<ServiceRequestFormValues>({
-    resolver: yupResolver(serviceRequestFormSchema) as unknown as Resolver<ServiceRequestFormValues>,
+    resolver: yupResolver(
+      serviceRequestFormSchema,
+    ) as unknown as Resolver<ServiceRequestFormValues>,
     defaultValues: {
       serviceRequestId: "",
       identifierValue: "00001B",
@@ -345,6 +385,22 @@ function MutationForm({
   const procedurePreset = watch("procedurePreset");
   const diagnosisPreset = watch("diagnosisPreset");
 
+  // Auto-generate nomor SR & ACSN saat form pertama dibuka
+  useEffect(() => {
+    const code = buildSRCode(1);
+    setValue("identifierValue", code, { shouldValidate: false });
+    setValue("acsnValue", code, { shouldValidate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGenerate = () => {
+    const next = srSeq + 1;
+    setSrSeq(next);
+    const code = buildSRCode(next);
+    setValue("identifierValue", code, { shouldValidate: false });
+    setValue("acsnValue", code, { shouldValidate: false });
+  };
+
   // Auto-fill procedure fields saat preset berubah
   useEffect(() => {
     if (!procedurePreset || procedurePreset === "custom") return;
@@ -359,12 +415,19 @@ function MutationForm({
     // Sync body site juga
     setValue("bodySitePreset", procedurePreset, { shouldValidate: false });
     setValue("bodySiteCode", preset.bodySite.code, { shouldValidate: false });
-    setValue("bodySiteDisplay", preset.bodySite.display, { shouldValidate: false });
+    setValue("bodySiteDisplay", preset.bodySite.display, {
+      shouldValidate: false,
+    });
   }, [procedurePreset, setValue]);
 
   // Auto-fill diagnosis saat preset berubah
   useEffect(() => {
-    if (!diagnosisPreset || diagnosisPreset === "none" || diagnosisPreset === "custom") return;
+    if (
+      !diagnosisPreset ||
+      diagnosisPreset === "none" ||
+      diagnosisPreset === "custom"
+    )
+      return;
     const preset = ICD10_PRESETS[diagnosisPreset as Icd10PresetKey];
     if (!preset) return;
     setValue("diagnosisCode", preset.code, { shouldValidate: false });
@@ -374,18 +437,24 @@ function MutationForm({
   /**
    * Bangun payload FHIR R4 dari nilai form yang sudah tervalidasi.
    */
-  const buildPayload = (data: ServiceRequestFormValues): ServiceRequestPayload => {
-    const orgId = process.env.NEXT_PUBLIC_SATU_SEHAT_ORG_ID ?? "ORG_ID_NOT_SET";
-
+  const buildPayload = (
+    data: ServiceRequestFormValues,
+  ): ServiceRequestPayload => {
     const supportingInfo: Array<{ reference: string }> = [];
     if (data.observationId?.trim()) {
-      supportingInfo.push({ reference: `Observation/${data.observationId.trim()}` });
+      supportingInfo.push({
+        reference: `Observation/${data.observationId.trim()}`,
+      });
     }
     if (data.allergyId?.trim()) {
-      supportingInfo.push({ reference: `AllergyIntolerance/${data.allergyId.trim()}` });
+      supportingInfo.push({
+        reference: `AllergyIntolerance/${data.allergyId.trim()}`,
+      });
     }
     if (data.procedureId?.trim()) {
-      supportingInfo.push({ reference: `Procedure/${data.procedureId.trim()}` });
+      supportingInfo.push({
+        reference: `Procedure/${data.procedureId.trim()}`,
+      });
     }
 
     const hasBodySite =
@@ -555,11 +624,9 @@ function MutationForm({
     }
   };
 
-  const showBodySiteFields =
-    watch("bodySitePreset") !== "none";
+  const showBodySiteFields = watch("bodySitePreset") !== "none";
 
-  const showDiagnosisFields =
-    watch("diagnosisPreset") !== "none";
+  const showDiagnosisFields = watch("diagnosisPreset") !== "none";
 
   return (
     <div className="space-y-4">
@@ -583,8 +650,11 @@ function MutationForm({
 
       {/* ── Form mode ── */}
       {mode === "form" && (
-        <form onSubmit={handleSubmit(onValidForm)} noValidate className="space-y-4">
-
+        <form
+          onSubmit={handleSubmit(onValidForm)}
+          noValidate
+          className="space-y-4"
+        >
           {/* ID resource — hanya untuk PUT/PATCH */}
           {needsId && (
             <Section title="Identifikasi">
@@ -613,17 +683,30 @@ function MutationForm({
                 hint="Nomor lokal dari sistem fasilitas"
                 error={errors.identifierValue?.message}
               >
-                <div className="flex">
-                  <span className="flex items-center px-2.5 bg-amber-50 border border-r-0 border-amber-200 rounded-l-xl text-[10px] text-amber-600 font-mono whitespace-nowrap max-w-40 truncate">
-                    sys-ids/servicerequest/…
-                  </span>
-                  <input
-                    {...register("identifierValue")}
-                    type="text"
-                    placeholder="00001B"
-                    className={`${ic(!!errors.identifierValue)} rounded-l-none border-l-0 font-mono`}
-                    autoComplete="off"
-                  />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    <span className="font-mono text-amber-700 truncate">
+                      sys-ids/servicerequest/
+                      <span className="font-bold text-amber-600">{orgId}</span>
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      {...register("identifierValue")}
+                      type="text"
+                      placeholder="RAD2610420001"
+                      className={`${ic(!!errors.identifierValue)} font-mono flex-1`}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerate}
+                      title="Generate ulang nomor"
+                      className="shrink-0 px-2 rounded border border-amber-300 bg-amber-50 text-amber-700 text-xs hover:bg-amber-100 active:scale-95 transition"
+                    >
+                      ↺
+                    </button>
+                  </div>
                 </div>
               </Field>
 
@@ -633,17 +716,30 @@ function MutationForm({
                 hint="Accession Number"
                 error={errors.acsnValue?.message}
               >
-                <div className="flex">
-                  <span className="flex items-center px-2.5 bg-violet-50 border border-r-0 border-violet-200 rounded-l-xl text-[10px] text-violet-600 font-mono whitespace-nowrap max-w-40 truncate">
-                    sys-ids/acsn/…
-                  </span>
-                  <input
-                    {...register("acsnValue")}
-                    type="text"
-                    placeholder="ACSN-2024-001"
-                    className={`${ic(!!errors.acsnValue)} rounded-l-none border-l-0 font-mono`}
-                    autoComplete="off"
-                  />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    <span className="font-mono text-violet-700 truncate">
+                      sys-ids/acsn/
+                      <span className="font-bold text-violet-600">{orgId}</span>
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      {...register("acsnValue")}
+                      type="text"
+                      placeholder="RAD2610420001"
+                      className={`${ic(!!errors.acsnValue)} font-mono flex-1`}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerate}
+                      title="Generate ulang nomor"
+                      className="shrink-0 px-2 rounded border border-violet-300 bg-violet-50 text-violet-700 text-xs hover:bg-violet-100 active:scale-95 transition"
+                    >
+                      ↺
+                    </button>
+                  </div>
                 </div>
               </Field>
             </div>
@@ -674,8 +770,15 @@ function MutationForm({
                 </select>
               </Field>
 
-              <Field label="Prioritas" required error={errors.priority?.message}>
-                <select {...register("priority")} className={ic(!!errors.priority)}>
+              <Field
+                label="Prioritas"
+                required
+                error={errors.priority?.message}
+              >
+                <select
+                  {...register("priority")}
+                  className={ic(!!errors.priority)}
+                >
                   <option value="routine">Routine — Rutin</option>
                   <option value="urgent">Urgent — Mendesak</option>
                   <option value="asap">ASAP — Sesegera Mungkin</option>
@@ -696,11 +799,13 @@ function MutationForm({
                 {...register("procedurePreset")}
                 className={ic(!!errors.procedurePreset)}
               >
-                {(Object.keys(IMAGING_PRESETS) as ImagingPresetKey[]).map((key) => (
-                  <option key={key} value={key}>
-                    {IMAGING_PRESETS[key].label}
-                  </option>
-                ))}
+                {(Object.keys(IMAGING_PRESETS) as ImagingPresetKey[]).map(
+                  (key) => (
+                    <option key={key} value={key}>
+                      {IMAGING_PRESETS[key].label}
+                    </option>
+                  ),
+                )}
               </select>
             </Field>
 
@@ -710,7 +815,11 @@ function MutationForm({
                 LOINC (Internasional)
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Kode LOINC" required error={errors.loincCode?.message}>
+                <Field
+                  label="Kode LOINC"
+                  required
+                  error={errors.loincCode?.message}
+                >
                   <input
                     {...register("loincCode")}
                     type="text"
@@ -719,7 +828,11 @@ function MutationForm({
                     autoComplete="off"
                   />
                 </Field>
-                <Field label="Nama LOINC" required error={errors.loincDisplay?.message}>
+                <Field
+                  label="Nama LOINC"
+                  required
+                  error={errors.loincDisplay?.message}
+                >
                   <input
                     {...register("loincDisplay")}
                     type="text"
@@ -737,7 +850,11 @@ function MutationForm({
                 KPTL (Tarif Nasional Satu Sehat)
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Kode KPTL" required error={errors.kptlCode?.message}>
+                <Field
+                  label="Kode KPTL"
+                  required
+                  error={errors.kptlCode?.message}
+                >
                   <input
                     {...register("kptlCode")}
                     type="text"
@@ -746,7 +863,11 @@ function MutationForm({
                     autoComplete="off"
                   />
                 </Field>
-                <Field label="Nama KPTL" required error={errors.kptlDisplay?.message}>
+                <Field
+                  label="Nama KPTL"
+                  required
+                  error={errors.kptlDisplay?.message}
+                >
                   <input
                     {...register("kptlDisplay")}
                     type="text"
@@ -758,7 +879,11 @@ function MutationForm({
               </div>
             </div>
 
-            <Field label="Nama Prosedur" required error={errors.procedureText?.message}>
+            <Field
+              label="Nama Prosedur"
+              required
+              error={errors.procedureText?.message}
+            >
               <input
                 {...register("procedureText")}
                 type="text"
@@ -810,7 +935,11 @@ function MutationForm({
           {/* Pasien & Encounter */}
           <Section title="Pasien & Kunjungan">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Patient ID" required error={errors.patientId?.message}>
+              <Field
+                label="Patient ID"
+                required
+                error={errors.patientId?.message}
+              >
                 <div className="flex">
                   <RefPrefix label="Patient/" />
                   <input
@@ -823,7 +952,11 @@ function MutationForm({
                 </div>
               </Field>
 
-              <Field label="Encounter ID" required error={errors.encounterId?.message}>
+              <Field
+                label="Encounter ID"
+                required
+                error={errors.encounterId?.message}
+              >
                 <div className="flex">
                   <RefPrefix label="Encounter/" />
                   <input
@@ -872,7 +1005,11 @@ function MutationForm({
           {/* Dokter Pengirim */}
           <Section title="Dokter Pengirim (Requester)">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Practitioner ID" required error={errors.requesterId?.message}>
+              <Field
+                label="Practitioner ID"
+                required
+                error={errors.requesterId?.message}
+              >
                 <div className="flex">
                   <RefPrefix label="Practitioner/" />
                   <input
@@ -885,7 +1022,11 @@ function MutationForm({
                 </div>
               </Field>
 
-              <Field label="Nama Dokter" required error={errors.requesterDisplay?.message}>
+              <Field
+                label="Nama Dokter"
+                required
+                error={errors.requesterDisplay?.message}
+              >
                 <input
                   {...register("requesterDisplay")}
                   type="text"
@@ -899,7 +1040,11 @@ function MutationForm({
           {/* Radiolog */}
           <Section title="Radiolog (Performer)">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Practitioner ID" required error={errors.performerId?.message}>
+              <Field
+                label="Practitioner ID"
+                required
+                error={errors.performerId?.message}
+              >
                 <div className="flex">
                   <RefPrefix label="Practitioner/" />
                   <input
@@ -912,7 +1057,11 @@ function MutationForm({
                 </div>
               </Field>
 
-              <Field label="Nama Radiolog" required error={errors.performerDisplay?.message}>
+              <Field
+                label="Nama Radiolog"
+                required
+                error={errors.performerDisplay?.message}
+              >
                 <input
                   {...register("performerDisplay")}
                   type="text"
@@ -934,17 +1083,27 @@ function MutationForm({
                 {...register("bodySitePreset")}
                 className={ic(!!errors.bodySitePreset)}
                 onChange={(e) => {
-                  const key = e.target.value as ImagingPresetKey;
-                  if (key !== "none" && key !== "custom" && key in IMAGING_PRESETS) {
-                    const preset = IMAGING_PRESETS[key];
-                    setValue("bodySiteCode", preset.bodySite.code, { shouldValidate: false });
-                    setValue("bodySiteDisplay", preset.bodySite.display, { shouldValidate: false });
+                  const key = e.target.value as
+                    | ImagingPresetKey
+                    | "none"
+                    | "custom";
+                  if (
+                    key !== "none" &&
+                    key !== "custom" &&
+                    key in IMAGING_PRESETS
+                  ) {
+                    const preset = IMAGING_PRESETS[key as ImagingPresetKey];
+                    setValue("bodySiteCode", preset.bodySite.code, {
+                      shouldValidate: false,
+                    });
+                    setValue("bodySiteDisplay", preset.bodySite.display, {
+                      shouldValidate: false,
+                    });
                   }
                   if (key === "none" || key === "custom") {
                     setValue("bodySiteCode", "", { shouldValidate: false });
                     setValue("bodySiteDisplay", "", { shouldValidate: false });
                   }
-                  // Trigger register onChange also
                   register("bodySitePreset").onChange(e);
                 }}
               >
@@ -953,7 +1112,8 @@ function MutationForm({
                   .filter((k) => k !== "custom")
                   .map((key) => (
                     <option key={key} value={key}>
-                      {IMAGING_PRESETS[key].label} ({IMAGING_PRESETS[key].bodySite.display})
+                      {IMAGING_PRESETS[key].label} (
+                      {IMAGING_PRESETS[key].bodySite.display})
                     </option>
                   ))}
                 <option value="custom">Custom / Lainnya</option>
@@ -976,7 +1136,10 @@ function MutationForm({
                   />
                 </Field>
 
-                <Field label="Nama Area Tubuh" error={errors.bodySiteDisplay?.message}>
+                <Field
+                  label="Nama Area Tubuh"
+                  error={errors.bodySiteDisplay?.message}
+                >
                   <input
                     {...register("bodySiteDisplay")}
                     type="text"
@@ -1028,7 +1191,10 @@ function MutationForm({
                   />
                 </Field>
 
-                <Field label="Nama Diagnosis" error={errors.diagnosisDisplay?.message}>
+                <Field
+                  label="Nama Diagnosis"
+                  error={errors.diagnosisDisplay?.message}
+                >
                   <input
                     {...register("diagnosisDisplay")}
                     type="text"
@@ -1138,7 +1304,10 @@ function MutationForm({
             />
 
             {rawError && (
-              <p className="flex items-center gap-1 text-[11px] text-red-600" role="alert">
+              <p
+                className="flex items-center gap-1 text-[11px] text-red-600"
+                role="alert"
+              >
                 <ErrorIcon />
                 {rawError}
               </p>
@@ -1150,7 +1319,8 @@ function MutationForm({
               className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold transition-all ${
                 loading
                   ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                  : (SUBMIT_COLOR[method] ?? "bg-slate-600 text-white hover:bg-slate-700")
+                  : (SUBMIT_COLOR[method] ??
+                    "bg-slate-600 text-white hover:bg-slate-700")
               }`}
             >
               {loading ? (
