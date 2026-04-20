@@ -19,7 +19,9 @@ const PROTECTED_PREFIXES = [
   "/service-request",
   "/patient",
   "/imaging-study",
+  "/jpg-to-dcm",
   "/api/fhir",
+  "/api/tools",
   "/api/logs",
 ];
 

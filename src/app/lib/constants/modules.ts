@@ -164,12 +164,22 @@ export const FHIR_MODULES: ModuleInfo[] = [
     methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
   },
+  {
+    name: "JpgToDicom",
+    path: "/jpg-to-dcm",
+    icon: "🔄",
+    desc: "Konversi file JPG/JPEG ke format DICOM (CR Thorax PA)",
+    group: "Utilitas",
+    methods: [],
+    badge: "Active",
+  },
 ];
 
 export const MODULE_GROUPS = [
   "Klinis",
   "Pasien & Praktisi",
   "Obat & Diagnosa",
+  "Utilitas",
 ] as const;
 
 export const METHOD_CONFIG = {

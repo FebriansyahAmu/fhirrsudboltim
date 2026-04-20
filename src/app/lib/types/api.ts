@@ -39,7 +39,7 @@ export interface ModuleInfo {
   hasPage?: boolean;
 }
 
-export type ModuleGroup = "Klinis" | "Pasien & Praktisi" | "Obat & Diagnosa";
+export type ModuleGroup = "Klinis" | "Pasien & Praktisi" | "Obat & Diagnosa" | "Utilitas";
 
 export interface DashboardStats {
   total: number;
