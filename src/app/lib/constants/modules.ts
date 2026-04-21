@@ -85,9 +85,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
     icon: "👨‍⚕️",
     desc: "Data dokter",
     group: "Pasien & Praktisi",
-    methods: ["POST", "GET", "PUT"],
+    methods: ["GET"],
     badge: "Active",
-    hasPage: false,
   },
   {
     name: "Organization",

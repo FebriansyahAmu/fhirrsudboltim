@@ -59,7 +59,7 @@ function JsonHighlight({ code }: { code: string }) {
     <div className="font-mono text-xs leading-relaxed">
       {lines.map((line, i) => (
         <div key={i} className="flex">
-          <span className="select-none text-slate-300 text-right pr-4 min-w-[2.5rem] flex-shrink-0 tabular-nums">
+          <span className="select-none text-slate-300 text-right pr-4 min-w-10 shrink-0 tabular-nums">
             {i + 1}
           </span>
           <span className="flex-1 break-all">
@@ -217,7 +217,6 @@ export default function ResponseViewer({
             </div>
           </div>
         )}
-
         {/* Error */}
         {!response.loading && response.error && (
           <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
@@ -246,8 +245,7 @@ export default function ResponseViewer({
             </div>
           </div>
         )}
-
-        {/* Empty */}
+        ;{/* Empty */}
         {!response.loading && !response.error && !response.data && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
             <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-2xl">
@@ -263,36 +261,36 @@ export default function ResponseViewer({
             </div>
           </div>
         )}
-
         {/* Body JSON — dirender sebagai React nodes, bukan HTML string */}
         {!response.loading && formatted && activeTab === "body" && (
           <JsonHighlight code={formatted} />
         )}
-
         {/* Headers mock */}
-        {!response.loading && response.data && activeTab === "headers" && (
-          <div className="space-y-1">
-            {[
-              ["content-type", "application/fhir+json; charset=utf-8"],
-              ["x-fhir-version", "4.0.1"],
-              ["cache-control", "no-cache, no-store"],
-              [
-                "x-request-id",
-                `req_${Math.random().toString(36).slice(2, 10)}`,
-              ],
-              ["date", new Date().toUTCString()],
-            ].map(([k, v]) => (
-              <div
-                key={k}
-                className="flex gap-4 py-2 border-b border-slate-50 text-xs font-mono hover:bg-slate-50 rounded px-2"
-              >
-                {/* Render sebagai teks biasa, React auto-escape */}
-                <span className="text-blue-600 min-w-40 shrink-0">{k}</span>
-                <span className="text-slate-600">{v}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {!response.loading &&
+          Boolean(response.data) &&
+          activeTab === "headers" && (
+            <div className="space-y-1">
+              {[
+                ["content-type", "application/fhir+json; charset=utf-8"],
+                ["x-fhir-version", "4.0.1"],
+                ["cache-control", "no-cache, no-store"],
+                [
+                  "x-request-id",
+                  `req_${Math.random().toString(36).slice(2, 10)}`,
+                ],
+                ["date", new Date().toUTCString()],
+              ].map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex gap-4 py-2 border-b border-slate-50 text-xs font-mono hover:bg-slate-50 rounded px-2"
+                >
+                  {/* Render sebagai teks biasa, React auto-escape */}
+                  <span className="text-blue-600 min-w-40 shrink-0">{k}</span>
+                  <span className="text-slate-600">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
     </div>
   );

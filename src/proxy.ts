@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   "/location",
   "/service-request",
   "/patient",
+  "/practitioner",
   "/imaging-study",
   "/jpg-to-dcm",
   "/dicom-router",

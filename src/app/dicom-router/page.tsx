@@ -266,7 +266,7 @@ interface FhirBundle {
   entry?: { resource: Record<string, unknown> }[];
 }
 
-const VERIFY_POLL_MS   = 3_000;
+const VERIFY_POLL_MS = 3_000;
 const VERIFY_TIMEOUT_MS = 30_000;
 
 // ─────────────────────────────────────────────
@@ -297,9 +297,26 @@ function VerifySection({
       {status === "no-acsn" && (
         <div className="rounded-xl border border-red-300 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 bg-red-50">
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="shrink-0 text-red-500">
-              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M6.5 4v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 13 13"
+              fill="none"
+              className="shrink-0 text-red-500"
+            >
+              <circle
+                cx="6.5"
+                cy="6.5"
+                r="5.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="M6.5 4v3"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
               <circle cx="6.5" cy="9" r="0.7" fill="currentColor" />
             </svg>
             <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest">
@@ -308,13 +325,19 @@ function VerifySection({
           </div>
           <div className="px-3 py-2.5 bg-red-950 space-y-1.5">
             <p className="text-[11px] text-red-300 leading-relaxed">
-              File tidak memiliki <strong className="text-red-200">ACSN Number / Service Request</strong>.
-              Router menerima file secara transport (C-STORE), namun tidak dapat membuat
-              ImagingStudy di Satu Sehat karena tidak ada referensi ACSN.
+              File tidak memiliki{" "}
+              <strong className="text-red-200">
+                ACSN Number / Service Request
+              </strong>
+              . Router menerima file secara transport (C-STORE), namun tidak
+              dapat membuat ImagingStudy di Satu Sehat karena tidak ada
+              referensi ACSN.
             </p>
             <p className="text-[10px] text-red-400">
-              Gunakan halaman <strong className="text-red-300">Patch ACSN</strong> atau converter untuk
-              embed Accession Number ke file .dcm sebelum mengirim ulang.
+              Gunakan halaman{" "}
+              <strong className="text-red-300">Patch ACSN</strong> atau
+              converter untuk embed Accession Number ke file .dcm sebelum
+              mengirim ulang.
             </p>
           </div>
         </div>
@@ -322,13 +345,27 @@ function VerifySection({
 
       {status === "polling" && (
         <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
-          <svg className="animate-spin text-blue-400 shrink-0" width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="2" strokeDasharray="16" strokeDashoffset="8" />
+          <svg
+            className="animate-spin text-blue-400 shrink-0"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+          >
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeDasharray="16"
+              strokeDashoffset="8"
+            />
           </svg>
           <p className="text-[11px] text-blue-700">
             Mencari ImagingStudy dengan ACSN{" "}
-            <code className="font-mono bg-blue-100 px-1 rounded">{acsn}</code>
-            … (maks 30 detik)
+            <code className="font-mono bg-blue-100 px-1 rounded">{acsn}</code>…
+            (maks 30 detik)
           </p>
         </div>
       )}
@@ -350,14 +387,61 @@ function VerifySection({
       )}
 
       {status === "not-found" && (
-        <div className="flex gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
-          <span className="text-amber-500 shrink-0 mt-0.5 text-xs">⏱</span>
-          <p className="text-[11px] text-amber-700 leading-relaxed">
-            ImagingStudy dengan ACSN{" "}
-            <code className="font-mono bg-amber-100 px-1 rounded">{acsn}</code>{" "}
-            tidak ditemukan setelah 30 detik. Data mungkin belum diproses
-            router, atau terjadi kesalahan pada pipeline router.
-          </p>
+        <div className="rounded-xl border border-red-300 overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-50">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 13 13"
+              fill="none"
+              className="shrink-0 text-red-500"
+            >
+              <circle
+                cx="6.5"
+                cy="6.5"
+                r="5.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="M6.5 4v3"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <circle cx="6.5" cy="9" r="0.7" fill="currentColor" />
+            </svg>
+            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest">
+              ImagingStudy tidak ditemukan di Satu Sehat
+            </span>
+          </div>
+          <div className="px-3 py-2.5 bg-red-950 space-y-1.5">
+            <p className="text-[11px] text-red-300 leading-relaxed">
+              ImagingStudy dengan ACSN{" "}
+              <code className="font-mono bg-red-900 px-1 rounded text-red-200">
+                {acsn}
+              </code>{" "}
+              belum ditemukan di Satu Sehat. Kemungkinan penyebab:
+            </p>
+            <ul className="text-[10px] text-red-400 space-y-1 pl-3 list-disc">
+              <li>
+                <strong className="text-red-300">
+                  ServiceRequest belum dibuat
+                </strong>{" "}
+                — router membutuhkan ServiceRequest yang sudah ada untuk membuat
+                ImagingStudy.
+              </li>
+              <li>
+                <strong className="text-red-300">Router gagal memproses</strong>{" "}
+                — cek log DICOM router untuk detail error.
+              </li>
+              <li>
+                <strong className="text-red-300">ACSN tidak cocok</strong> —
+                pastikan ACSN di file .dcm sama dengan yang ada di
+                ServiceRequest.
+              </li>
+            </ul>
+          </div>
         </div>
       )}
     </div>
@@ -533,7 +617,11 @@ function ResponsePanel({
             )}
 
             {/* Verifikasi ImagingStudy di Satu Sehat */}
-            <VerifySection status={verifyStatus} acsn={verifyAcsn} bundle={verifyBundle} />
+            <VerifySection
+              status={verifyStatus}
+              acsn={verifyAcsn}
+              bundle={verifyBundle}
+            />
           </div>
         )}
 
@@ -701,7 +789,7 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   const [verifyBundle, setVerifyBundle] = useState<FhirBundle | null>(null);
   const [verifyAcsn, setVerifyAcsn] = useState<string | null>(null);
   const verifyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const verifyStartRef  = useRef<number>(0);
+  const verifyStartRef = useRef<number>(0);
 
   const stopVerify = () => {
     if (verifyTimerRef.current) {
@@ -735,7 +823,9 @@ function SendTab({ config }: { config: RouterConfig | null }) {
           setVerifyBundle(bundle);
           setVerifyStatus("found");
         }
-      } catch { /* abaikan error jaringan sementara */ }
+      } catch {
+        /* abaikan error jaringan sementara */
+      }
     }, VERIFY_POLL_MS);
   };
 
