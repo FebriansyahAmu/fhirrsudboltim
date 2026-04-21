@@ -7,7 +7,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
-import dicomRouterConfig from "@/app/lib/config/dicom-router.config";
+import { getDicomRouterConfig } from "@/app/lib/config/dicom-router.config";
 
 export type { DicomRouterConfig as RouterConfig } from "@/app/lib/config/dicom-router.config";
 
@@ -39,7 +39,7 @@ function runStorescu(args: string[]): Promise<{ stdout: string; stderr: string }
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json(dicomRouterConfig);
+  return NextResponse.json(getDicomRouterConfig());
 }
 
 export async function POST(request: NextRequest) {
@@ -66,7 +66,8 @@ export async function POST(request: NextRequest) {
     tempPath = join(tmpdir(), `dcm_send_${tempId}.dcm`);
     await writeFile(tempPath, Buffer.from(await file.arrayBuffer()));
 
-    const { host, port, aeTitle } = dicomRouterConfig;
+    const router = getDicomRouterConfig();
+    const { host, port, aeTitle } = router;
 
     const { stdout, stderr } = await runStorescu([
       "--call", aeTitle,
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
       fileName: file.name,
       stdout,
       stderr,
-      router: dicomRouterConfig,
+      router,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal mengirim ke DICOM Router";

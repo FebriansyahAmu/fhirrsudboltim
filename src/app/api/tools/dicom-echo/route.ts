@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
-import dicomRouterConfig from "@/app/lib/config/dicom-router.config";
+import { getDicomRouterConfig } from "@/app/lib/config/dicom-router.config";
 
 function runEchoscu(args: string[]): Promise<{ stdout: string; stderr: string; durationMs: number }> {
   return new Promise((resolve, reject) => {
@@ -35,7 +35,8 @@ export async function POST() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { host, port, aeTitle } = dicomRouterConfig;
+  const router = getDicomRouterConfig();
+  const { host, port, aeTitle } = router;
 
   try {
     const { stdout, stderr, durationMs } = await runEchoscu([
@@ -48,7 +49,7 @@ export async function POST() {
       durationMs,
       stdout,
       stderr,
-      router: dicomRouterConfig,
+      router,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal melakukan echo ke DICOM Router";
