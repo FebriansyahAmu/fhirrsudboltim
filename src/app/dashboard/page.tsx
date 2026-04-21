@@ -75,10 +75,13 @@ const MODULE_ACCENT: Record<string, { from: string; border: string }> = {
   ServiceRequest: { from: "from-purple-50", border: "border-purple-100" },
   ImagingStudy: { from: "from-sky-50", border: "border-sky-200" },
   EpisodeOfCare: { from: "from-emerald-50", border: "border-emerald-100" },
-  QuestionnaireResponse: { from: "from-orange-50", border: "border-orange-100" },
+  QuestionnaireResponse: {
+    from: "from-orange-50",
+    border: "border-orange-100",
+  },
   JpgToDicom: { from: "from-violet-50", border: "border-violet-100" },
   DicomRouter: { from: "from-cyan-50", border: "border-cyan-100" },
-  PatchAcsn:   { from: "from-orange-50", border: "border-orange-100" },
+  PatchAcsn: { from: "from-orange-50", border: "border-orange-100" },
 };
 
 // ─────────────────────────────────────────────
@@ -89,8 +92,14 @@ export default async function DashboardPage() {
   const session = await getSession();
 
   const emptyStats = {
-    total: 0, success: 0, failed: 0, today: 0,
-    todaySuccess: 0, todayFailed: 0, avgResponseMs: null, lastActivityAt: null,
+    total: 0,
+    success: 0,
+    failed: 0,
+    today: 0,
+    todaySuccess: 0,
+    todayFailed: 0,
+    avgResponseMs: null,
+    lastActivityAt: null,
   };
 
   const [stats, recentLogs] = session
@@ -100,13 +109,13 @@ export default async function DashboardPage() {
       ])
     : [emptyStats, []];
 
-  const successRate = stats.total > 0
-    ? ((stats.success / stats.total) * 100).toFixed(1)
-    : "0.0";
-  const failRate = stats.total > 0
-    ? ((stats.failed / stats.total) * 100).toFixed(1)
-    : "0.0";
+  const successRate =
+    stats.total > 0 ? ((stats.success / stats.total) * 100).toFixed(1) : "0.0";
+  const failRate =
+    stats.total > 0 ? ((stats.failed / stats.total) * 100).toFixed(1) : "0.0";
 
+  const fhirModules = FHIR_MODULES.filter((m) => m.group !== "Utilitas");
+  const utilsModules = FHIR_MODULES.filter((m) => m.group === "Utilitas");
   const activeModules = FHIR_MODULES.filter((m) => m.hasPage !== false).length;
 
   const statCards = [
@@ -139,9 +148,10 @@ export default async function DashboardPage() {
     {
       label: "Hari Ini",
       value: fmt(stats.today),
-      sub: stats.today > 0
-        ? `${fmt(stats.todaySuccess)} berhasil · ${fmt(stats.todayFailed)} gagal`
-        : "Belum ada kiriman hari ini",
+      sub:
+        stats.today > 0
+          ? `${fmt(stats.todaySuccess)} berhasil · ${fmt(stats.todayFailed)} gagal`
+          : "Belum ada kiriman hari ini",
       icon: "📅",
       iconBg: "bg-blue-50",
       valueCls: stats.today > 0 ? "text-blue-700" : "text-slate-400",
@@ -151,7 +161,6 @@ export default async function DashboardPage() {
   return (
     <DashboardLayout title="Dashboard" breadcrumbs={[{ label: "Dashboard" }]}>
       <div className="space-y-8">
-
         {/* ── Header ── */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
@@ -188,14 +197,18 @@ export default async function DashboardPage() {
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between mb-3">
-                <span className={`w-8 h-8 rounded-xl flex items-center justify-center text-base leading-none ${stat.iconBg}`}>
+                <span
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center text-base leading-none ${stat.iconBg}`}
+                >
                   {stat.icon}
                 </span>
                 <span className="text-[10px] font-medium text-slate-400 text-right leading-tight max-w-24">
                   {stat.sub}
                 </span>
               </div>
-              <p className={`text-2xl font-bold tabular-nums tracking-tight ${stat.valueCls}`}>
+              <p
+                className={`text-2xl font-bold tabular-nums tracking-tight ${stat.valueCls}`}
+              >
                 {stat.value}
               </p>
               <p className="text-xs text-slate-400 font-medium mt-1">
@@ -220,11 +233,17 @@ export default async function DashboardPage() {
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
               <div className="divide-y divide-slate-50">
                 {recentLogs.map((log) => {
-                  const isSuccess = log.status_code >= 200 && log.status_code < 300;
+                  const isSuccess =
+                    log.status_code >= 200 && log.status_code < 300;
                   return (
-                    <div key={log.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                    <div
+                      key={log.id}
+                      className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+                    >
                       {/* Method */}
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${METHOD_PILL[log.method] ?? "bg-slate-100 text-slate-600"}`}>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${METHOD_PILL[log.method] ?? "bg-slate-100 text-slate-600"}`}
+                      >
                         {log.method}
                       </span>
 
@@ -234,11 +253,13 @@ export default async function DashboardPage() {
                       </span>
 
                       {/* Status code */}
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full tabular-nums shrink-0 ${
-                        isSuccess
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-red-50 text-red-600"
-                      }`}>
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full tabular-nums shrink-0 ${
+                          isSuccess
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
                         {log.status_code}
                       </span>
 
@@ -259,7 +280,7 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* ── Modules Grid ── */}
+        {/* ── FHIR Modules ── */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
@@ -271,7 +292,7 @@ export default async function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {[...FHIR_MODULES]
+            {[...fhirModules]
               .sort((a, b) => {
                 const rank = (m: typeof a) =>
                   m.hasPage === false || m.badge === "Soon" ? 1 : 0;
@@ -282,25 +303,34 @@ export default async function DashboardPage() {
                   from: "from-slate-50",
                   border: "border-slate-100",
                 };
-                const isDisabled = mod.hasPage === false || mod.badge === "Soon";
-
+                const isDisabled =
+                  mod.hasPage === false || mod.badge === "Soon";
                 const card = (
-                  <div className={`group bg-linear-to-br ${accent.from} to-white border ${accent.border} rounded-2xl p-5 transition-all duration-200 ${
-                    isDisabled
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
-                  }`}>
-                    {/* Top row */}
+                  <div
+                    className={`group bg-linear-to-br ${accent.from} to-white border ${accent.border} rounded-2xl p-5 transition-all duration-200 ${
+                      isDisabled
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                    }`}
+                  >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl leading-none">{mod.icon}</span>
+                        <span className="text-2xl leading-none">
+                          {mod.icon}
+                        </span>
                         <div>
-                          <p className="text-sm font-bold text-slate-800">{mod.name}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">{mod.group}</p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {mod.name}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {mod.group}
+                          </p>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_STYLE[mod.badge]}`}>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_STYLE[mod.badge]}`}
+                        >
                           {mod.badge}
                         </span>
                         {isDisabled && mod.badge !== "Soon" && (
@@ -310,34 +340,113 @@ export default async function DashboardPage() {
                         )}
                       </div>
                     </div>
-
-                    <p className="text-xs text-slate-500 leading-relaxed mb-4">{mod.desc}</p>
-
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                      {mod.desc}
+                    </p>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {mod.methods.map((m: HttpMethod) => (
-                        <span key={m} className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${METHOD_PILL[m]}`}>
+                        <span
+                          key={m}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${METHOD_PILL[m]}`}
+                        >
                           {m}
                         </span>
                       ))}
                     </div>
-
                     {!isDisabled && (
                       <div className="flex items-center gap-1 mt-4 text-teal-600 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
                         Buka modul
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                        >
+                          <path
+                            d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
                         </svg>
                       </div>
                     )}
                   </div>
                 );
-
                 return isDisabled ? (
                   <div key={mod.name}>{card}</div>
                 ) : (
-                  <Link key={mod.name} href={mod.path}>{card}</Link>
+                  <Link key={mod.name} href={mod.path}>
+                    {card}
+                  </Link>
                 );
               })}
+          </div>
+        </div>
+
+        {/* ── Utilitas ── */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
+              Utilitas
+            </h2>
+            <span className="text-xs text-slate-400">
+              {utilsModules.length} alat
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {utilsModules.map((mod) => {
+              const accent = MODULE_ACCENT[mod.name] ?? {
+                from: "from-slate-50",
+                border: "border-slate-100",
+              };
+              const card = (
+                <div
+                  className={`group bg-linear-to-br ${accent.from} to-white border ${accent.border} rounded-2xl p-5 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl leading-none">{mod.icon}</span>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">
+                          {mod.name}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Utilitas
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_STYLE[mod.badge]}`}
+                    >
+                      {mod.badge}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    {mod.desc}
+                  </p>
+                  <div className="flex items-center gap-1 text-teal-600 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                    Buka alat
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              );
+              return (
+                <Link key={mod.name} href={mod.path}>
+                  {card}
+                </Link>
+              );
+            })}
           </div>
         </div>
 

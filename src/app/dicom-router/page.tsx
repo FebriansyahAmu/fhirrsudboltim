@@ -38,15 +38,37 @@ function Field({
         {label}
         {required && <span className="text-red-400 font-bold">*</span>}
         {hint && (
-          <span className="text-slate-400 font-normal text-[11px]">— {hint}</span>
+          <span className="text-slate-400 font-normal text-[11px]">
+            — {hint}
+          </span>
         )}
       </label>
       {children}
       {error && (
-        <p className="flex items-center gap-1 text-[11px] text-red-600" role="alert">
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="shrink-0">
-            <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-            <path d="M5.5 3.5V5.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <p
+          className="flex items-center gap-1 text-[11px] text-red-600"
+          role="alert"
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 11 11"
+            fill="none"
+            className="shrink-0"
+          >
+            <circle
+              cx="5.5"
+              cy="5.5"
+              r="4.5"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+            <path
+              d="M5.5 3.5V5.8"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
             <circle cx="5.5" cy="7.5" r="0.5" fill="currentColor" />
           </svg>
           {error}
@@ -88,11 +110,14 @@ function DropZone({
         dragOver
           ? "border-cyan-400 bg-cyan-50"
           : file
-          ? "border-emerald-300 bg-emerald-50"
-          : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
+            ? "border-emerald-300 bg-emerald-50"
+            : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
       }`}
       onClick={() => !disabled && inputRef.current?.click()}
-      onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (!disabled) setDragOver(true);
+      }}
       onDragLeave={() => setDragOver(false)}
       onDrop={disabled ? undefined : handleDrop}
     >
@@ -112,17 +137,27 @@ function DropZone({
         <div className="flex items-center gap-3 px-4 py-4">
           <span className="text-2xl">🗂️</span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">{file.name}</p>
+            <p className="text-sm font-semibold text-slate-800 truncate">
+              {file.name}
+            </p>
             <p className="text-[11px] text-slate-400">{fmtSize(file.size)}</p>
           </div>
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClear();
+            }}
             disabled={disabled}
             className="text-slate-300 hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-50 disabled:pointer-events-none"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path
+                d="M4 4L12 12M12 4L4 12"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
         </div>
@@ -130,7 +165,9 @@ function DropZone({
         <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
           <span className="text-3xl">📡</span>
           <p className="text-sm font-medium text-slate-500">
-            {dragOver ? "Lepaskan file di sini" : "Klik atau drag & drop file .dcm"}
+            {dragOver
+              ? "Lepaskan file di sini"
+              : "Klik atau drag & drop file .dcm"}
           </p>
           <p className="text-[11px] text-slate-400">Maks 50 MB</p>
         </div>
@@ -188,14 +225,18 @@ function TerminalOutput({
 }) {
   if (!content) return null;
   const styles = {
-    slate:   "bg-slate-900 text-slate-300 border-slate-700",
+    slate: "bg-slate-900 text-slate-300 border-slate-700",
     emerald: "bg-emerald-950 text-emerald-300 border-emerald-800",
-    amber:   "bg-amber-950 text-amber-300 border-amber-800",
+    amber: "bg-amber-950 text-amber-300 border-amber-800",
   }[color];
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
-      <pre className={`text-[11px] font-mono leading-relaxed px-4 py-3 rounded-xl border overflow-x-auto whitespace-pre-wrap break-all ${styles}`}>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        {label}
+      </p>
+      <pre
+        className={`text-[11px] font-mono leading-relaxed px-4 py-3 rounded-xl border overflow-x-auto whitespace-pre-wrap break-all ${styles}`}
+      >
         {content}
       </pre>
     </div>
@@ -251,15 +292,15 @@ function ResponsePanel({
               state === "loading"
                 ? "bg-amber-100 text-amber-600"
                 : state === "success" && errors.length === 0
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-red-100 text-red-700"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-red-100 text-red-700"
             }`}
           >
             {state === "loading"
               ? "SENDING..."
               : state === "success" && errors.length === 0
-              ? "SUCCESS"
-              : "ERROR"}
+                ? "SUCCESS"
+                : "ERROR"}
           </span>
         )}
       </div>
@@ -270,15 +311,25 @@ function ResponsePanel({
           <div className="flex gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
             <span className="shrink-0 text-amber-500 mt-0.5">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M6 1L11 10H1L6 1Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-                <path d="M6 5v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <path
+                  d="M6 1L11 10H1L6 1Z"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M6 5v2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
                 <circle cx="6" cy="9" r="0.6" fill="currentColor" />
               </svg>
             </span>
             <p className="text-[10px] text-amber-700 leading-relaxed">
-              <strong>SUCCESS</strong> berarti file <em>diterima</em> oleh router (C-STORE).
-              Proses lanjutan di router (buat ImagingStudy, dll.) berjalan terpisah dan tidak
-              tercermin di sini.
+              <strong>SUCCESS</strong> berarti file <em>diterima</em> oleh
+              router (C-STORE). Proses lanjutan di router (buat ImagingStudy,
+              dll.) berjalan terpisah dan tidak tercermin di sini.
             </p>
           </div>
         )}
@@ -287,17 +338,35 @@ function ResponsePanel({
         {state === "idle" && (
           <div className="flex flex-col items-center justify-center h-full py-10 gap-2 text-center">
             <span className="text-3xl opacity-30">📋</span>
-            <p className="text-[12px] text-slate-400">Response akan muncul di sini</p>
+            <p className="text-[12px] text-slate-400">
+              Response akan muncul di sini
+            </p>
           </div>
         )}
 
         {/* Loading */}
         {state === "loading" && (
           <div className="flex flex-col items-center justify-center h-full py-10 gap-3">
-            <svg className="animate-spin text-cyan-500" width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="40" strokeDashoffset="20" />
+            <svg
+              className="animate-spin text-cyan-500"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeDasharray="40"
+                strokeDashoffset="20"
+              />
             </svg>
-            <p className="text-[12px] text-slate-400">Mengirim ke DICOM Router...</p>
+            <p className="text-[12px] text-slate-400">
+              Mengirim ke DICOM Router...
+            </p>
           </div>
         )}
 
@@ -306,10 +375,14 @@ function ResponsePanel({
           <div className="space-y-4">
             {/* Command yang dijalankan */}
             <div className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Command</p>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                Command
+              </p>
               <p className="text-[11px] font-mono text-slate-600 break-all">
                 storescu --call{" "}
-                <span className="text-cyan-700 font-bold">{result.router.aeTitle}</span>{" "}
+                <span className="text-cyan-700 font-bold">
+                  {result.router.aeTitle}
+                </span>{" "}
                 {result.router.host} {result.router.port}{" "}
                 <span className="text-slate-500">{result.fileName}</span>
               </p>
@@ -323,7 +396,10 @@ function ResponsePanel({
                 </p>
                 <div className="bg-red-950 rounded-xl border border-red-800 px-4 py-3 space-y-1">
                   {errors.map((line, i) => (
-                    <p key={i} className="text-[11px] font-mono text-red-300 break-all">
+                    <p
+                      key={i}
+                      className="text-[11px] font-mono text-red-300 break-all"
+                    >
                       {line}
                     </p>
                   ))}
@@ -351,12 +427,25 @@ function ResponsePanel({
             <div className="flex items-start gap-2.5 px-3 py-3 rounded-xl bg-red-50 border border-red-200">
               <span className="shrink-0 text-red-500 mt-0.5">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M7 4v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <circle
+                    cx="7"
+                    cy="7"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  <path
+                    d="M7 4v3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
                   <circle cx="7" cy="10" r="0.75" fill="currentColor" />
                 </svg>
               </span>
-              <p className="text-[11px] text-red-700 font-semibold">Pengiriman gagal</p>
+              <p className="text-[11px] text-red-700 font-semibold">
+                Pengiriman gagal
+              </p>
             </div>
             <pre className="text-[11px] font-mono leading-relaxed bg-slate-900 text-red-300 border border-slate-700 px-4 py-3 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
               {errorMsg}
@@ -370,10 +459,10 @@ function ResponsePanel({
 
 // Field-field kritis yang wajib ada agar router dapat memproses file
 const CRITICAL_FIELDS: { key: keyof DicomMeta; label: string }[] = [
-  { key: "AccessionNumber",  label: "Accession Number" },
+  { key: "AccessionNumber", label: "Accession Number" },
   { key: "StudyDescription", label: "Study Description" },
-  { key: "StudyDate",        label: "Study Date" },
-  { key: "Modality",         label: "Modality" },
+  { key: "StudyDate", label: "Study Date" },
+  { key: "Modality", label: "Modality" },
 ];
 
 function PreflightCard({
@@ -388,8 +477,22 @@ function PreflightCard({
   if (checking) {
     return (
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100">
-        <svg className="animate-spin text-slate-400 shrink-0" width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="2" strokeDasharray="16" strokeDashoffset="8" />
+        <svg
+          className="animate-spin text-slate-400 shrink-0"
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+        >
+          <circle
+            cx="6"
+            cy="6"
+            r="4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray="16"
+            strokeDashoffset="8"
+          />
         </svg>
         <p className="text-[11px] text-slate-500">Memeriksa metadata DCM...</p>
       </div>
@@ -399,40 +502,57 @@ function PreflightCard({
     return (
       <div className="flex gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200">
         <span className="text-red-400 shrink-0 mt-0.5 text-xs">⚠</span>
-        <p className="text-[11px] text-red-700">Gagal baca metadata: {metaErr}</p>
+        <p className="text-[11px] text-red-700">
+          Gagal baca metadata: {metaErr}
+        </p>
       </div>
     );
   }
   if (!meta) return null;
 
   const missing = CRITICAL_FIELDS.filter((f) => !meta[f.key]);
-  const allOk   = missing.length === 0;
+  const allOk = missing.length === 0;
 
   return (
-    <div className={`rounded-xl border overflow-hidden ${allOk ? "border-emerald-200" : "border-amber-300"}`}>
+    <div
+      className={`rounded-xl border overflow-hidden ${allOk ? "border-emerald-200" : "border-amber-300"}`}
+    >
       {/* Header */}
-      <div className={`flex items-center justify-between px-3 py-2 ${allOk ? "bg-emerald-50" : "bg-amber-50"}`}>
-        <span className={`text-[10px] font-bold uppercase tracking-widest ${allOk ? "text-emerald-600" : "text-amber-600"}`}>
+      <div
+        className={`flex items-center justify-between px-3 py-2 ${allOk ? "bg-emerald-50" : "bg-amber-50"}`}
+      >
+        <span
+          className={`text-[10px] font-bold uppercase tracking-widest ${allOk ? "text-emerald-600" : "text-amber-600"}`}
+        >
           Pre-flight Check
         </span>
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${allOk ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+        <span
+          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${allOk ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}
+        >
           {allOk ? "✓ OK" : `${missing.length} field kosong`}
         </span>
       </div>
       {/* Fields */}
       <div className="bg-white divide-y divide-slate-50">
         {CRITICAL_FIELDS.map(({ key, label }) => {
-          const val     = meta[key];
+          const val = meta[key];
           const isEmpty = !val;
           return (
-            <div key={key} className="flex items-center justify-between px-3 py-1.5 gap-3">
-              <span className="text-[10px] text-slate-500 shrink-0">{label}</span>
+            <div
+              key={key}
+              className="flex items-center justify-between px-3 py-1.5 gap-3"
+            >
+              <span className="text-[10px] text-slate-500 shrink-0">
+                {label}
+              </span>
               {isEmpty ? (
                 <span className="text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded">
                   KOSONG ⚠
                 </span>
               ) : (
-                <span className="text-[10px] font-mono text-slate-700 truncate max-w-40">{val}</span>
+                <span className="text-[10px] font-mono text-slate-700 truncate max-w-40">
+                  {val}
+                </span>
               )}
             </div>
           );
@@ -442,8 +562,8 @@ function PreflightCard({
       {!allOk && (
         <div className="px-3 py-2 bg-amber-50 border-t border-amber-200">
           <p className="text-[10px] text-amber-700">
-            Field kosong dapat menyebabkan router gagal membuat ImagingStudy di Satu Sehat.
-            Gunakan converter untuk embed metadata yang lengkap.
+            Field kosong dapat menyebabkan router gagal membuat ImagingStudy di
+            Satu Sehat. Gunakan converter untuk embed metadata yang lengkap.
           </p>
         </div>
       )}
@@ -462,11 +582,16 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   const [metaErr, setMetaErr] = useState<string | null>(null);
 
   const checkMeta = async (f: File) => {
-    setMetaChecking(true); setMeta(null); setMetaErr(null);
+    setMetaChecking(true);
+    setMeta(null);
+    setMetaErr(null);
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const res = await fetch("/api/tools/verify-dcm", { method: "POST", body: fd });
+      const res = await fetch("/api/tools/verify-dcm", {
+        method: "POST",
+        body: fd,
+      });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error ?? "Gagal baca metadata");
       setMeta(payload.meta as DicomMeta);
@@ -478,30 +603,46 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   };
 
   const acceptFile = (f: File) => {
-    if (!f.name.match(/\.dcm$/i)) { setErrorMsg("Hanya file .dcm yang didukung."); return; }
-    setFile(f); setErrorMsg(null); setState("idle"); setResult(null);
+    if (!f.name.match(/\.dcm$/i)) {
+      setErrorMsg("Hanya file .dcm yang didukung.");
+      return;
+    }
+    setFile(f);
+    setErrorMsg(null);
+    setState("idle");
+    setResult(null);
     checkMeta(f);
   };
 
   const handleSend = async () => {
     if (!file) return;
-    setState("loading"); setResult(null); setErrorMsg(null);
+    setState("loading");
+    setResult(null);
+    setErrorMsg(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/tools/send-to-router", { method: "POST", body: fd });
+      const res = await fetch("/api/tools/send-to-router", {
+        method: "POST",
+        body: fd,
+      });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error ?? "Gagal mengirim ke router");
       setResult(payload as SendResult);
       setState("success");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Gagal mengirim ke router");
+      setErrorMsg(
+        err instanceof Error ? err.message : "Gagal mengirim ke router",
+      );
       setState("error");
     }
   };
 
   const handleReset = () => {
-    setFile(null); setState("idle"); setResult(null); setErrorMsg(null);
+    setFile(null);
+    setState("idle");
+    setResult(null);
+    setErrorMsg(null);
   };
 
   return (
@@ -511,8 +652,8 @@ function SendTab({ config }: { config: RouterConfig | null }) {
         <div className="flex gap-2.5 px-3.5 py-3 rounded-xl bg-cyan-50 border border-cyan-100">
           <span className="text-base leading-none shrink-0 mt-0.5">💡</span>
           <p className="text-[11px] text-cyan-700 leading-relaxed">
-            Upload <strong>.dcm</strong>, lalu klik <strong>Kirim</strong>. Response
-            ditampilkan di panel kanan.
+            Upload <strong>.dcm</strong>, lalu klik <strong>Kirim</strong>.
+            Response ditampilkan di panel kanan.
           </p>
         </div>
 
@@ -547,15 +688,35 @@ function SendTab({ config }: { config: RouterConfig | null }) {
           >
             {state === "loading" ? (
               <>
-                <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="2" strokeDasharray="20" strokeDashoffset="10" />
+                <svg
+                  className="animate-spin"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                >
+                  <circle
+                    cx="7"
+                    cy="7"
+                    r="5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeDasharray="20"
+                    strokeDashoffset="10"
+                  />
                 </svg>
                 Mengirim...
               </>
             ) : (
               <>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M2 7h10M8 3l4 4-4 4"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
                 Kirim ke DICOM Router
               </>
@@ -598,7 +759,9 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
   const [error, setError] = useState<string | null>(null);
 
   const handleEcho = async () => {
-    setStatus("loading"); setResult(null); setError(null);
+    setStatus("loading");
+    setResult(null);
+    setError(null);
     try {
       const res = await fetch("/api/tools/dicom-echo", { method: "POST" });
       const payload = await res.json();
@@ -611,20 +774,24 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
     }
   };
 
-  const handleReset = () => { setStatus("idle"); setResult(null); setError(null); };
+  const handleReset = () => {
+    setStatus("idle");
+    setResult(null);
+    setError(null);
+  };
 
   const statusDot = {
-    idle:    "bg-slate-300",
+    idle: "bg-slate-300",
     loading: "bg-amber-400 animate-pulse",
     success: "bg-emerald-400",
-    error:   "bg-red-400",
+    error: "bg-red-400",
   }[status];
 
   const statusLabel = {
-    idle:    "Belum diuji",
+    idle: "Belum diuji",
     loading: "Menghubungkan...",
     success: "Terhubung",
-    error:   "Tidak terhubung",
+    error: "Tidak terhubung",
   }[status];
 
   return (
@@ -636,7 +803,8 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
           Uji koneksi ke DICOM Router dengan mengirimkan{" "}
           <strong>C-ECHO SCU</strong>. Sistem menjalankan{" "}
           <code className="font-mono bg-indigo-100 px-1 rounded">
-            echoscu --call {config?.aeTitle ?? "…"} {config?.host ?? "…"} {config?.port ?? "…"}
+            echoscu --call {config?.aeTitle ?? "…"} {config?.host ?? "…"}{" "}
+            {config?.port ?? "…"}
           </code>{" "}
           di sisi server.
         </p>
@@ -648,7 +816,9 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
       <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 border border-slate-100">
         <div className="flex items-center gap-2.5">
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${statusDot}`} />
-          <span className="text-sm font-semibold text-slate-700">{statusLabel}</span>
+          <span className="text-sm font-semibold text-slate-700">
+            {statusLabel}
+          </span>
         </div>
         {result && (
           <span className="text-[11px] font-mono text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
@@ -671,18 +841,46 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
         >
           {status === "loading" ? (
             <>
-              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="2" strokeDasharray="20" strokeDashoffset="10" />
+              <svg
+                className="animate-spin"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+              >
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeDasharray="20"
+                  strokeDashoffset="10"
+                />
               </svg>
               Menghubungkan...
             </>
           ) : (
             <>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M7 4v3l2 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M7 4v3l2 1.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
-              {status === "success" || status === "error" ? "Uji Ulang" : "Test Koneksi (C-ECHO)"}
+              {status === "success" || status === "error"
+                ? "Uji Ulang"
+                : "Test Koneksi (C-ECHO)"}
             </>
           )}
         </button>
@@ -708,12 +906,21 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
                 DICOM Router merespons C-ECHO
               </p>
               <p className="text-[11px] text-emerald-600">
-                {result.router.host}:{result.router.port} ({result.router.aeTitle}) — {result.durationMs} ms
+                {result.router.host}:{result.router.port} (
+                {result.router.aeTitle}) — {result.durationMs} ms
               </p>
             </div>
           </div>
-          <TerminalOutput label="stdout" content={result.stdout} color="emerald" />
-          <TerminalOutput label="stderr (info DCMTK)" content={result.stderr} color="amber" />
+          <TerminalOutput
+            label="stdout"
+            content={result.stdout}
+            color="emerald"
+          />
+          <TerminalOutput
+            label="stderr (info DCMTK)"
+            content={result.stderr}
+            color="amber"
+          />
         </div>
       )}
 
@@ -723,7 +930,9 @@ function EchoTab({ config }: { config: RouterConfig | null }) {
           <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
             <span className="text-lg shrink-0">❌</span>
             <div>
-              <p className="text-sm font-semibold text-red-800">Koneksi gagal</p>
+              <p className="text-sm font-semibold text-red-800">
+                Koneksi gagal
+              </p>
               <p className="text-[11px] text-red-600 mt-0.5">
                 Pastikan DICOM Router aktif dan dapat dijangkau dari server.
               </p>
@@ -744,7 +953,7 @@ type Tab = "send" | "echo";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "send", label: "Kirim File DICOM", icon: "📤" },
-  { id: "echo", label: "Test Koneksi",     icon: "🔌" },
+  { id: "echo", label: "Test Koneksi", icon: "🔌" },
 ];
 
 export default function DicomRouterPage() {
@@ -786,7 +995,8 @@ export default function DicomRouterPage() {
               </span>
             </div>
             <p className="text-sm text-slate-500 mt-0.5">
-              Kirim file DICOM dan uji koneksi ke DICOM Router via C-STORE / C-ECHO SCU
+              Kirim file DICOM dan uji koneksi ke DICOM Router via C-STORE /
+              C-ECHO SCU
             </p>
           </div>
         </div>
@@ -821,16 +1031,34 @@ export default function DicomRouterPage() {
 
         {/* ── Prasyarat ── */}
         <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-3">
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Prasyarat</p>
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+            Prasyarat
+          </p>
           <div className="space-y-2 text-[11px] text-slate-600">
             {[
               [
                 "Install DCMTK",
-                <>Pastikan <code className="font-mono bg-slate-200 px-1 rounded">storescu</code> dan <code className="font-mono bg-slate-200 px-1 rounded">echoscu</code> tersedia di PATH server.</>,
+                <>
+                  Pastikan{" "}
+                  <code className="font-mono bg-slate-200 px-1 rounded">
+                    storescu
+                  </code>{" "}
+                  dan{" "}
+                  <code className="font-mono bg-slate-200 px-1 rounded">
+                    echoscu
+                  </code>{" "}
+                  tersedia di PATH server.
+                </>,
               ],
               [
                 "Konfigurasi router",
-                <>Edit <code className="font-mono bg-slate-200 px-1 rounded">src/app/lib/config/dicom-router.config.ts</code> sesuai host, port, dan AE title target.</>,
+                <>
+                  Edit{" "}
+                  <code className="font-mono bg-slate-200 px-1 rounded">
+                    src/app/lib/config/dicom-router.config.ts
+                  </code>{" "}
+                  sesuai host, port, dan AE title target.
+                </>,
               ],
               [
                 "Jaringan server",
@@ -839,7 +1067,9 @@ export default function DicomRouterPage() {
             ].map(([title, desc], i) => (
               <div key={i} className="flex gap-2">
                 <span className="shrink-0 text-slate-400">{"①②③"[i]}</span>
-                <span><strong>{title}</strong> — {desc}</span>
+                <span>
+                  <strong>{title}</strong> — {desc}
+                </span>
               </div>
             ))}
           </div>
