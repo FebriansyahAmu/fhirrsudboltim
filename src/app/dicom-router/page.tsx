@@ -257,6 +257,113 @@ interface SendResult {
 
 type SendState = "idle" | "loading" | "success" | "error";
 
+// Status verifikasi ImagingStudy di Satu Sehat berdasarkan ACSN
+type VerifyStatus = "idle" | "polling" | "found" | "not-found" | "no-acsn";
+
+interface FhirBundle {
+  resourceType: string;
+  total: number;
+  entry?: { resource: Record<string, unknown> }[];
+}
+
+const VERIFY_POLL_MS   = 3_000;
+const VERIFY_TIMEOUT_MS = 30_000;
+
+// ─────────────────────────────────────────────
+// Verify Section — ditampilkan di ResponsePanel setelah storescu success
+// ─────────────────────────────────────────────
+
+function VerifySection({
+  status,
+  acsn,
+  bundle,
+}: {
+  status: VerifyStatus;
+  acsn: string | null;
+  bundle: FhirBundle | null;
+}) {
+  if (status === "idle") return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-px bg-slate-100" />
+        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest shrink-0">
+          Verifikasi Satu Sehat
+        </span>
+        <div className="flex-1 h-px bg-slate-100" />
+      </div>
+
+      {status === "no-acsn" && (
+        <div className="rounded-xl border border-red-300 overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-50">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="shrink-0 text-red-500">
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M6.5 4v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <circle cx="6.5" cy="9" r="0.7" fill="currentColor" />
+            </svg>
+            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest">
+              File tidak terkirim ke Satu Sehat
+            </span>
+          </div>
+          <div className="px-3 py-2.5 bg-red-950 space-y-1.5">
+            <p className="text-[11px] text-red-300 leading-relaxed">
+              File tidak memiliki <strong className="text-red-200">ACSN Number / Service Request</strong>.
+              Router menerima file secara transport (C-STORE), namun tidak dapat membuat
+              ImagingStudy di Satu Sehat karena tidak ada referensi ACSN.
+            </p>
+            <p className="text-[10px] text-red-400">
+              Gunakan halaman <strong className="text-red-300">Patch ACSN</strong> atau converter untuk
+              embed Accession Number ke file .dcm sebelum mengirim ulang.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {status === "polling" && (
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
+          <svg className="animate-spin text-blue-400 shrink-0" width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="2" strokeDasharray="16" strokeDashoffset="8" />
+          </svg>
+          <p className="text-[11px] text-blue-700">
+            Mencari ImagingStudy dengan ACSN{" "}
+            <code className="font-mono bg-blue-100 px-1 rounded">{acsn}</code>
+            … (maks 30 detik)
+          </p>
+        </div>
+      )}
+
+      {status === "found" && bundle && (
+        <div className="rounded-xl border border-emerald-200 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-emerald-50">
+            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
+              ImagingStudy ditemukan
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+              {bundle.total} resource
+            </span>
+          </div>
+          <pre className="text-[10px] font-mono leading-relaxed bg-emerald-950 text-emerald-200 px-3 py-3 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+            {JSON.stringify(bundle.entry?.[0]?.resource ?? bundle, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {status === "not-found" && (
+        <div className="flex gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+          <span className="text-amber-500 shrink-0 mt-0.5 text-xs">⏱</span>
+          <p className="text-[11px] text-amber-700 leading-relaxed">
+            ImagingStudy dengan ACSN{" "}
+            <code className="font-mono bg-amber-100 px-1 rounded">{acsn}</code>{" "}
+            tidak ditemukan setelah 30 detik. Data mungkin belum diproses
+            router, atau terjadi kesalahan pada pipeline router.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function parseErrors(stdout: string, stderr: string): string[] {
   return [stdout, stderr]
     .join("\n")
@@ -269,10 +376,16 @@ function ResponsePanel({
   state,
   result,
   errorMsg,
+  verifyStatus,
+  verifyAcsn,
+  verifyBundle,
 }: {
   state: SendState;
   result: SendResult | null;
   errorMsg: string | null;
+  verifyStatus: VerifyStatus;
+  verifyAcsn: string | null;
+  verifyBundle: FhirBundle | null;
 }) {
   const errors = result ? parseErrors(result.stdout, result.stderr) : [];
   const allOutput = result
@@ -418,6 +531,9 @@ function ResponsePanel({
                 </pre>
               </div>
             )}
+
+            {/* Verifikasi ImagingStudy di Satu Sehat */}
+            <VerifySection status={verifyStatus} acsn={verifyAcsn} bundle={verifyBundle} />
           </div>
         )}
 
@@ -581,6 +697,48 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   const [meta, setMeta] = useState<DicomMeta | null>(null);
   const [metaErr, setMetaErr] = useState<string | null>(null);
 
+  const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>("idle");
+  const [verifyBundle, setVerifyBundle] = useState<FhirBundle | null>(null);
+  const [verifyAcsn, setVerifyAcsn] = useState<string | null>(null);
+  const verifyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const verifyStartRef  = useRef<number>(0);
+
+  const stopVerify = () => {
+    if (verifyTimerRef.current) {
+      clearInterval(verifyTimerRef.current);
+      verifyTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => stopVerify(), []);
+
+  const startVerify = (acsn: string) => {
+    setVerifyAcsn(acsn);
+    setVerifyBundle(null);
+    setVerifyStatus("polling");
+    verifyStartRef.current = Date.now();
+
+    verifyTimerRef.current = setInterval(async () => {
+      if (Date.now() - verifyStartRef.current >= VERIFY_TIMEOUT_MS) {
+        stopVerify();
+        setVerifyStatus("not-found");
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/fhir/ImagingStudy?identifier=${encodeURIComponent(acsn)}`,
+        );
+        if (!res.ok) return; // biarkan polling lanjut jika error sementara
+        const bundle = (await res.json()) as FhirBundle;
+        if (bundle.total > 0) {
+          stopVerify();
+          setVerifyBundle(bundle);
+          setVerifyStatus("found");
+        }
+      } catch { /* abaikan error jaringan sementara */ }
+    }, VERIFY_POLL_MS);
+  };
+
   const checkMeta = async (f: File) => {
     setMetaChecking(true);
     setMeta(null);
@@ -607,6 +765,10 @@ function SendTab({ config }: { config: RouterConfig | null }) {
       setErrorMsg("Hanya file .dcm yang didukung.");
       return;
     }
+    stopVerify();
+    setVerifyStatus("idle");
+    setVerifyBundle(null);
+    setVerifyAcsn(null);
     setFile(f);
     setErrorMsg(null);
     setState("idle");
@@ -616,6 +778,9 @@ function SendTab({ config }: { config: RouterConfig | null }) {
 
   const handleSend = async () => {
     if (!file) return;
+    stopVerify();
+    setVerifyStatus("idle");
+    setVerifyBundle(null);
     setState("loading");
     setResult(null);
     setErrorMsg(null);
@@ -630,6 +795,12 @@ function SendTab({ config }: { config: RouterConfig | null }) {
       if (!res.ok) throw new Error(payload.error ?? "Gagal mengirim ke router");
       setResult(payload as SendResult);
       setState("success");
+      const acsn = meta?.AccessionNumber;
+      if (acsn) {
+        startVerify(acsn);
+      } else {
+        setVerifyStatus("no-acsn");
+      }
     } catch (err) {
       setErrorMsg(
         err instanceof Error ? err.message : "Gagal mengirim ke router",
@@ -639,6 +810,10 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   };
 
   const handleReset = () => {
+    stopVerify();
+    setVerifyStatus("idle");
+    setVerifyBundle(null);
+    setVerifyAcsn(null);
     setFile(null);
     setState("idle");
     setResult(null);
@@ -646,9 +821,9 @@ function SendTab({ config }: { config: RouterConfig | null }) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {/* ── Kiri: Input ── */}
-      <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4 overflow-y-auto max-h-[72vh]">
         <div className="flex gap-2.5 px-3.5 py-3 rounded-xl bg-cyan-50 border border-cyan-100">
           <span className="text-base leading-none shrink-0 mt-0.5">💡</span>
           <p className="text-[11px] text-cyan-700 leading-relaxed">
@@ -734,7 +909,16 @@ function SendTab({ config }: { config: RouterConfig | null }) {
       </div>
 
       {/* ── Kanan: Response Panel ── */}
-      <ResponsePanel state={state} result={result} errorMsg={errorMsg} />
+      <div className="h-[72vh]">
+        <ResponsePanel
+          state={state}
+          result={result}
+          errorMsg={errorMsg}
+          verifyStatus={verifyStatus}
+          verifyAcsn={verifyAcsn}
+          verifyBundle={verifyBundle}
+        />
+      </div>
     </div>
   );
 }
@@ -975,7 +1159,7 @@ export default function DicomRouterPage() {
         { label: "DICOM Router" },
       ]}
     >
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-6">
         {/* ── Header ── */}
         <div className="flex items-center gap-4">
           <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-cyan-100 to-sky-100 border border-cyan-200 flex items-center justify-center text-2xl shrink-0 shadow-sm">
