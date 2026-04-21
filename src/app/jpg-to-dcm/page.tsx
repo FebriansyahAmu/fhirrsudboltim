@@ -601,7 +601,7 @@ export default function JpgToDicomPage() {
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-900">Konversi JPG → DICOM</h1>
+              <h1 className="text-xl font-bold text-slate-900">Konversi DICOM</h1>
               <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-violet-100 text-violet-700">
                 CR Thorax PA
               </span>
@@ -610,7 +610,7 @@ export default function JpgToDicomPage() {
               </span>
             </div>
             <p className="text-sm text-slate-500 mt-0.5">
-              Konversi & verifikasi file DICOM untuk radiologi — Satu Sehat Integration
+              Konversi dan verifikasi file DICOM untuk radiologi — Satu Sehat Integration
             </p>
           </div>
         </div>
@@ -629,14 +629,15 @@ export default function JpgToDicomPage() {
               }`}
             >
               <span>{tab.icon}</span>
-              <span>{tab.label}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
 
         {/* ── Tab Content ── */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          {activeTab === "convert" ? <ConvertTab /> : <VerifyTab />}
+          {activeTab === "convert" && <ConvertTab />}
+          {activeTab === "verify"  && <VerifyTab />}
         </div>
       </div>
     </DashboardLayout>

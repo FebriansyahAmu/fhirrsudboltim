@@ -182,6 +182,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     methods: [],
     badge: "Active",
   },
+  {
+    name: "PatchAcsn",
+    path: "/patch-acsn",
+    icon: "✏️",
+    desc: "Tambahkan atau ubah Accession Number pada file .dcm yang sudah ada",
+    group: "Utilitas",
+    methods: [],
+    badge: "Active",
+  },
 ];
 
 export const MODULE_GROUPS = [

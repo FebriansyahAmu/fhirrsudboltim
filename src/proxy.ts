@@ -21,6 +21,7 @@ const PROTECTED_PREFIXES = [
   "/imaging-study",
   "/jpg-to-dcm",
   "/dicom-router",
+  "/patch-acsn",
   "/api/fhir",
   "/api/tools",
   "/api/logs",

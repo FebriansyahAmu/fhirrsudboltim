@@ -78,6 +78,7 @@ const MODULE_ACCENT: Record<string, { from: string; border: string }> = {
   QuestionnaireResponse: { from: "from-orange-50", border: "border-orange-100" },
   JpgToDicom: { from: "from-violet-50", border: "border-violet-100" },
   DicomRouter: { from: "from-cyan-50", border: "border-cyan-100" },
+  PatchAcsn:   { from: "from-orange-50", border: "border-orange-100" },
 };
 
 // ─────────────────────────────────────────────
