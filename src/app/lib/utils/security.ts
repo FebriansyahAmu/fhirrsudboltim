@@ -1,11 +1,3 @@
-// lib/utils/security.ts
-// Utility keamanan: sanitasi output, validasi input, pencegahan XSS/IDOR
-
-/**
- * Sanitasi string untuk mencegah XSS sebelum ditampilkan sebagai teks biasa.
- * Gunakan ini HANYA jika harus merender string ke innerHTML.
- * Selalu prefer React's default rendering (auto-escape) daripada dangerouslySetInnerHTML.
- */
 export function sanitizeText(input: unknown): string {
   if (typeof input !== "string") return "";
   return input
@@ -17,26 +9,17 @@ export function sanitizeText(input: unknown): string {
     .replace(/\//g, "&#x2F;");
 }
 
-/**
- * Validasi UUID v4 untuk mencegah IDOR dan path traversal.
- * Selalu validasi ID sebelum digunakan dalam request URL.
- */
 export function isValidUUID(value: string): boolean {
   const UUID_REGEX =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return UUID_REGEX.test(value);
 }
 
-/**
- * Build URL API yang aman — mencegah path traversal dengan validasi ID.
- * Throw jika ID tidak valid daripada membangun URL yang berbahaya.
- */
 export function buildSafeApiUrl(
   base: string,
   resourceType: string,
   resourceId?: string,
 ): string {
-  // Pastikan base URL tidak mengandung fragment atau query string berbahaya
   const allowedResourceTypes = [
     "AllergyIntolerance",
     "CarePlan",
@@ -74,10 +57,6 @@ export function buildSafeApiUrl(
   return `${base}/${resourceType}`;
 }
 
-/**
- * Build query string yang aman dari object parameter.
- * Otomatis encode semua nilai untuk mencegah injection.
- */
 export function buildSafeQueryString(
   params: Record<string, string | undefined>,
 ): string {
@@ -91,10 +70,6 @@ export function buildSafeQueryString(
   return qs ? `?${qs}` : "";
 }
 
-/**
- * Ambil token dari storage dengan aman.
- * Tidak pernah melempar error — kembalikan null jika tidak ada.
- */
 export function getStoredToken(): string | null {
   try {
     // Gunakan sessionStorage (lebih aman dari localStorage untuk token)
@@ -108,9 +83,6 @@ export function getStoredToken(): string | null {
   }
 }
 
-/**
- * Simpan token ke sessionStorage dengan aman.
- */
 export function storeToken(token: string): void {
   try {
     sessionStorage.setItem("ss_access_token", token);
@@ -119,9 +91,6 @@ export function storeToken(token: string): void {
   }
 }
 
-/**
- * Bersihkan token dari storage (logout).
- */
 export function clearToken(): void {
   try {
     sessionStorage.removeItem("ss_access_token");
@@ -130,10 +99,6 @@ export function clearToken(): void {
   }
 }
 
-/**
- * Format JSON untuk tampilan yang aman.
- * Selalu gunakan JSON.stringify — JANGAN eval() atau Function().
- */
 export function safeJsonStringify(data: unknown, indent = 2): string {
   try {
     return JSON.stringify(data, null, indent);
@@ -142,9 +107,6 @@ export function safeJsonStringify(data: unknown, indent = 2): string {
   }
 }
 
-/**
- * Parse JSON dengan aman — tidak pernah melempar error.
- */
 export function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -153,9 +115,6 @@ export function safeJsonParse(text: string): unknown {
   }
 }
 
-/**
- * Validasi bahwa string hanya mengandung karakter yang diizinkan untuk ID log.
- */
 export function generateLogId(): string {
   return `log_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }

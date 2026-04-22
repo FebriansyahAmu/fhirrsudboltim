@@ -1,16 +1,9 @@
-// lib/utils/log.ts
-// Utilitas untuk manajemen log pengiriman data
-
 import type { DeliveryLog, HttpMethod, SendStatus } from "../types/api";
 import { generateLogId } from "./security";
 
 const LOG_STORAGE_KEY = "ss_delivery_logs";
 const MAX_LOGS = 100; // Batas maksimal log yang disimpan
 
-/**
- * Simpan log pengiriman ke sessionStorage.
- * Log lama dihapus jika melebihi MAX_LOGS.
- */
 export function saveDeliveryLog(log: DeliveryLog): void {
   try {
     const existing = getDeliveryLogs();
@@ -21,9 +14,6 @@ export function saveDeliveryLog(log: DeliveryLog): void {
   }
 }
 
-/**
- * Ambil semua log pengiriman dari sessionStorage.
- */
 export function getDeliveryLogs(): DeliveryLog[] {
   try {
     const raw = sessionStorage.getItem(LOG_STORAGE_KEY);
@@ -36,9 +26,6 @@ export function getDeliveryLogs(): DeliveryLog[] {
   }
 }
 
-/**
- * Hapus semua log pengiriman.
- */
 export function clearDeliveryLogs(): void {
   try {
     sessionStorage.removeItem(LOG_STORAGE_KEY);
@@ -47,9 +34,6 @@ export function clearDeliveryLogs(): void {
   }
 }
 
-/**
- * Buat objek log baru dari hasil API call.
- */
 export function createDeliveryLog(params: {
   method: HttpMethod;
   endpoint: string;
@@ -78,9 +62,6 @@ export function createDeliveryLog(params: {
   };
 }
 
-/**
- * Format tanggal ISO ke format lokal Indonesia.
- */
 export function formatLogDate(isoString: string): string {
   try {
     return new Intl.DateTimeFormat("id-ID", {
@@ -96,9 +77,6 @@ export function formatLogDate(isoString: string): string {
   }
 }
 
-/**
- * Format durasi menjadi string yang mudah dibaca.
- */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;

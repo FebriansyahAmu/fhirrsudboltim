@@ -1,7 +1,3 @@
-// lib/session.ts
-// JWT session management — sign, verify, set/clear httpOnly cookie
-// Menggunakan `jose` agar kompatibel dengan Edge runtime (middleware)
-
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
@@ -20,9 +16,6 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-// ─────────────────────────────────────────────
-// Sign token — buat JWT baru
-// ─────────────────────────────────────────────
 export async function signToken(payload: SessionPayload): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
@@ -31,9 +24,6 @@ export async function signToken(payload: SessionPayload): Promise<string> {
     .sign(getSecret());
 }
 
-// ─────────────────────────────────────────────
-// Verify token — kembalikan payload atau null jika invalid/expired
-// ─────────────────────────────────────────────
 export async function verifyToken(
   token: string,
 ): Promise<SessionPayload | null> {
@@ -51,9 +41,6 @@ export async function verifyToken(
   }
 }
 
-// ─────────────────────────────────────────────
-// Set session cookie — dipanggil setelah login berhasil
-// ─────────────────────────────────────────────
 export async function setSessionCookie(payload: SessionPayload): Promise<void> {
   const token = await signToken(payload);
   const cookieStore = await cookies();
@@ -67,18 +54,11 @@ export async function setSessionCookie(payload: SessionPayload): Promise<void> {
   });
 }
 
-// ─────────────────────────────────────────────
-// Clear session cookie — dipanggil saat logout
-// ─────────────────────────────────────────────
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(COOKIE_NAME);
 }
 
-// ─────────────────────────────────────────────
-// Get current session — baca dari cookie aktif
-// Kembalikan null jika tidak ada / expired
-// ─────────────────────────────────────────────
 export async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
