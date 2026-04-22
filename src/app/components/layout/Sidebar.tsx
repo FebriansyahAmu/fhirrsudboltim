@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import { FHIR_MODULES, MODULE_GROUPS } from "@/app/lib/constants/modules";
@@ -12,9 +13,13 @@ import type { ModuleGroup } from "@/app/lib/types/api";
 function Logo({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-      <div className="w-8 h-8 rounded-xl bg-linear-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-md shadow-teal-200 shrink-0">
-        <span className="text-xs font-black text-white tracking-tight">1S</span>
-      </div>
+      <Image
+        src="/ehis-logo.svg"
+        alt="EHIS Logo"
+        width={32}
+        height={32}
+        className="shrink-0"
+      />
       {!collapsed && (
         <div>
           <p className="text-sm font-bold text-slate-800 leading-none">

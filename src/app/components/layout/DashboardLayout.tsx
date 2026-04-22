@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Sidebar from "./Sidebar";
 
 interface DashboardLayoutProps {
@@ -43,9 +44,7 @@ export default function DashboardLayout({
 
           {/* Logo mobile */}
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-linear-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-sm">
-              <span className="text-[10px] font-black text-white">1S</span>
-            </div>
+            <Image src="/ehis-logo.svg" alt="EHIS Logo" width={28} height={28} className="shrink-0" />
             {title && (
               <span className="text-sm font-semibold text-slate-800 truncate">
                 {title}
