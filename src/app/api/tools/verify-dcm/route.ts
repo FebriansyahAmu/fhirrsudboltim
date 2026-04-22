@@ -7,6 +7,8 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import { isValidDicom } from "@/app/lib/utils/file-validation";
 
 export interface DicomMeta {
   AccessionNumber: string | null;
@@ -66,6 +68,9 @@ function runPython(args: string[]): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.tools, "tools");
+  if (limited) return limited;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -87,10 +92,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ukuran file maksimal 50 MB" }, { status: 400 });
     }
 
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    if (!isValidDicom(fileBuffer)) {
+      return NextResponse.json({ error: "File bukan DICOM yang valid (magic bytes tidak cocok)" }, { status: 400 });
+    }
+
     const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     tempPath = join(tmpdir(), `dcm_verify_${tempId}.dcm`);
 
-    await writeFile(tempPath, Buffer.from(await file.arrayBuffer()));
+    await writeFile(tempPath, fileBuffer);
 
     const scriptPath = join(process.cwd(), "scripts", "read_dcm.py");
     const stdout = await runPython([scriptPath, tempPath]);

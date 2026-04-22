@@ -9,33 +9,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
 import { getSession } from "@/app/lib/session";
-
-const ALLOWED_RESOURCES = new Set([
-  "AllergyIntolerance",
-  "CarePlan",
-  "ClinicalImpression",
-  "Condition",
-  "DiagnosticReport",
-  "Encounter",
-  "EpisodeOfCare",
-  "Location",
-  "MedicationRequest",
-  "Observation",
-  "Organization",
-  "Patient",
-  "Practitioner",
-  "Procedure",
-  "ImagingStudy",
-  "Questionnaire",
-  "QuestionnaireResponse",
-  "ServiceRequest",
-]);
-
-async function getAuthenticatedSession() {
-  const session = await getSession();
-  if (!session) return null;
-  return session;
-}
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import {
+  ALLOWED_RESOURCES,
+  validateFhirPayload,
+} from "@/app/lib/constants/fhir";
 
 // ─────────────────────────────────────────────
 // GET /api/fhir/[resource] — ambil list atau search
@@ -44,7 +22,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ resource: string }> },
 ) {
-  const session = await getAuthenticatedSession();
+  const limited = checkRateLimit(request, RATE_LIMITS.api, "fhir");
+  if (limited) return limited;
+
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { error: "Tidak terautentikasi" },
@@ -84,7 +65,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ resource: string }> },
 ) {
-  const session = await getAuthenticatedSession();
+  const limited = checkRateLimit(request, RATE_LIMITS.api, "fhir");
+  if (limited) return limited;
+
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { error: "Tidak terautentikasi" },
@@ -106,6 +90,11 @@ export async function POST(
     payload = await request.json();
   } catch {
     return NextResponse.json({ error: "Body tidak valid" }, { status: 400 });
+  }
+
+  const validationError = validateFhirPayload(payload, resource);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
   const result = await sendToSatuSehat({

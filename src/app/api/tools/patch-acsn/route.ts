@@ -7,6 +7,8 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import { isValidDicom } from "@/app/lib/utils/file-validation";
 
 interface PatchResult {
   AccessionNumber: string | null;
@@ -48,6 +50,9 @@ function runPython(args: string[]): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.tools, "tools");
+  if (limited) return limited;
+
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -73,11 +78,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ukuran file maksimal 50 MB" }, { status: 400 });
     }
 
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    if (!isValidDicom(fileBuffer)) {
+      return NextResponse.json({ error: "File bukan DICOM yang valid (magic bytes tidak cocok)" }, { status: 400 });
+    }
+
     const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     tempIn  = join(tmpdir(), `dcm_patch_in_${tempId}.dcm`);
     tempOut = join(tmpdir(), `dcm_patch_out_${tempId}.dcm`);
 
-    await writeFile(tempIn, Buffer.from(await file.arrayBuffer()));
+    await writeFile(tempIn, fileBuffer);
 
     const scriptPath = join(process.cwd(), "scripts", "patch_acsn.py");
     const pythonArgs = [scriptPath, tempIn, tempOut, "--acsn", acsn];

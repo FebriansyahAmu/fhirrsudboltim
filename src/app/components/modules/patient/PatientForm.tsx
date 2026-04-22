@@ -25,7 +25,6 @@ import { useState } from "react";
 import {
   patientFormSchema,
   patientGetSchema,
-  PATIENT_GENDER_VALUES,
   MARITAL_STATUS_CODES,
   CONTACT_RELATIONSHIP_CODES,
   type PatientFormValues,
@@ -321,7 +320,8 @@ function MutationForm({
    */
   const buildPayload = (data: PatientFormValues): PatientPayload => {
     // Bangun extension kode wilayah — rw/rt opsional
-    const adminExtensions: Array<{ url: string; valueCode: string }> = [
+    type AdminCodeUrl = "province" | "city" | "district" | "village" | "rw" | "rt";
+    const adminExtensions: Array<{ url: AdminCodeUrl; valueCode: string }> = [
       { url: "province", valueCode: data.province },
       { url: "city", valueCode: data.cityCode },
       { url: "district", valueCode: data.district },
@@ -465,7 +465,7 @@ function MutationForm({
     });
   };
 
-  const handleRawSubmit = (e: React.FormEvent) => {
+  const handleRawSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const parsed = safeJsonParse(rawJson);
     if (!parsed) {

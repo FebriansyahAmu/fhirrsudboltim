@@ -2,7 +2,14 @@ import type { DeliveryLog, HttpMethod, SendStatus } from "../types/api";
 import { generateLogId } from "./security";
 
 const LOG_STORAGE_KEY = "ss_delivery_logs";
-const MAX_LOGS = 100; // Batas maksimal log yang disimpan
+const MAX_LOGS = 100;
+const MAX_FIELD_SIZE = 10_000;
+
+function truncateForStorage(data: unknown): unknown {
+  const str = typeof data === "string" ? data : JSON.stringify(data);
+  if (!str || str.length <= MAX_FIELD_SIZE) return data;
+  return { _truncated: true, preview: str.slice(0, MAX_FIELD_SIZE) };
+}
 
 export function saveDeliveryLog(log: DeliveryLog): void {
   try {
@@ -53,8 +60,8 @@ export function createDeliveryLog(params: {
     endpoint: params.endpoint,
     statusCode: params.statusCode,
     status,
-    payload: params.payload,
-    response: params.response,
+    payload: truncateForStorage(params.payload),
+    response: truncateForStorage(params.response),
     sentAt: new Date().toISOString(),
     timeMs: params.timeMs,
     resourceType: params.resourceType,

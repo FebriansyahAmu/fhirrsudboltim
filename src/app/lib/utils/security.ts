@@ -1,3 +1,5 @@
+import { ALLOWED_RESOURCES } from "@/app/lib/constants/fhir";
+
 export function sanitizeText(input: unknown): string {
   if (typeof input !== "string") return "";
   return input
@@ -20,28 +22,7 @@ export function buildSafeApiUrl(
   resourceType: string,
   resourceId?: string,
 ): string {
-  const allowedResourceTypes = [
-    "AllergyIntolerance",
-    "CarePlan",
-    "ClinicalImpression",
-    "Condition",
-    "DiagnosticReport",
-    "Encounter",
-    "EpisodeOfCare",
-    "Location",
-    "MedicationRequest",
-    "Observation",
-    "Organization",
-    "Patient",
-    "Practitioner",
-    "Procedure",
-    "ImagingStudy",
-    "Questionnaire",
-    "QuestionnaireResponse",
-    "ServiceRequest",
-  ];
-
-  if (!allowedResourceTypes.includes(resourceType)) {
+  if (!ALLOWED_RESOURCES.has(resourceType)) {
     throw new Error(`Resource type tidak diizinkan: ${resourceType}`);
   }
 

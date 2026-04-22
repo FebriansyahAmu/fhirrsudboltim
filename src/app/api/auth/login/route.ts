@@ -4,8 +4,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByUsername, validatePassword } from "@/app/lib/dal/auth.dal";
 import { setSessionCookie } from "@/app/lib/session";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.login, "login");
+  if (limited) return limited;
+
   let body: unknown;
 
   try {

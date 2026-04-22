@@ -265,30 +265,22 @@ export default function ResponseViewer({
         {!response.loading && formatted && activeTab === "body" && (
           <JsonHighlight code={formatted} />
         )}
-        {/* Headers mock */}
+        {/* Headers info */}
         {!response.loading &&
           Boolean(response.data) &&
           activeTab === "headers" && (
-            <div className="space-y-1">
-              {[
-                ["content-type", "application/fhir+json; charset=utf-8"],
-                ["x-fhir-version", "4.0.1"],
-                ["cache-control", "no-cache, no-store"],
-                [
-                  "x-request-id",
-                  `req_${Math.random().toString(36).slice(2, 10)}`,
-                ],
-                ["date", new Date().toUTCString()],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex gap-4 py-2 border-b border-slate-50 text-xs font-mono hover:bg-slate-50 rounded px-2"
-                >
-                  {/* Render sebagai teks biasa, React auto-escape */}
-                  <span className="text-blue-600 min-w-40 shrink-0">{k}</span>
-                  <span className="text-slate-600">{v}</span>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-2xl">
+                🔒
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Header tidak tersedia
+                </p>
+                <p className="text-xs text-slate-300 mt-1">
+                  Response headers dari Satu Sehat API tidak diteruskan melalui proxy
+                </p>
+              </div>
             </div>
           )}
       </div>

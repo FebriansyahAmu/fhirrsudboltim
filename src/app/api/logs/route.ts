@@ -4,8 +4,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
 import { getDeliveryLogs } from "@/app/lib/dal/fhir.dal";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import { ALLOWED_RESOURCES } from "@/app/lib/constants/fhir";
 
 export async function GET(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.api, "logs");
+  if (limited) return limited;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json(
@@ -14,8 +19,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const resourceType =
+  const rawResourceType =
     request.nextUrl.searchParams.get("resourceType") ?? undefined;
+
+  const resourceType =
+    rawResourceType && ALLOWED_RESOURCES.has(rawResourceType)
+      ? rawResourceType
+      : undefined;
 
   const rows = await getDeliveryLogs(session.userId, resourceType);
 

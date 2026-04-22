@@ -7,6 +7,8 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import { isValidJpeg } from "@/app/lib/utils/file-validation";
 
 function runPython(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -39,6 +41,9 @@ function runPython(args: string[]): Promise<void> {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.tools, "tools");
+  if (limited) return limited;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,6 +72,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ukuran file maksimal 20 MB" }, { status: 400 });
     }
 
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    if (!isValidJpeg(fileBuffer)) {
+      return NextResponse.json({ error: "File bukan JPEG yang valid (magic bytes tidak cocok)" }, { status: 400 });
+    }
+
     // Konversi date/time ke format DICOM
     const dicomDate = studyDate ? studyDate.replace(/-/g, "") : "";
     const dicomTime = studyTime
@@ -81,7 +91,7 @@ export async function POST(request: NextRequest) {
     inputPath = join(tmpdir(), `dcm_in_${tempId}.jpg`);
     outputPath = join(tmpdir(), `dcm_out_${tempId}.dcm`);
 
-    await writeFile(inputPath, Buffer.from(await file.arrayBuffer()));
+    await writeFile(inputPath, fileBuffer);
 
     // Jalankan Python script
     const scriptPath = join(process.cwd(), "scripts", "jpg_to_dcm.py");

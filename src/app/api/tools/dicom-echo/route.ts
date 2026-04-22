@@ -1,10 +1,11 @@
 // src/app/api/tools/dicom-echo/route.ts
 // Test koneksi ke DICOM Router via echoscu (DCMTK C-ECHO SCU)
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import { getSession } from "@/app/lib/session";
 import { getDicomRouterConfig } from "@/app/lib/config/dicom-router.config";
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 
 function runEchoscu(args: string[]): Promise<{ stdout: string; stderr: string; durationMs: number }> {
   return new Promise((resolve, reject) => {
@@ -31,7 +32,10 @@ function runEchoscu(args: string[]): Promise<{ stdout: string; stderr: string; d
   });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, RATE_LIMITS.tools, "tools");
+  if (limited) return limited;
+
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

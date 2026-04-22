@@ -5,33 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
 import { getSession } from "@/app/lib/session";
 import { isValidUUID } from "@/app/lib/utils/security";
-
-const ALLOWED_RESOURCES = new Set([
-  "AllergyIntolerance",
-  "CarePlan",
-  "ClinicalImpression",
-  "Condition",
-  "DiagnosticReport",
-  "Encounter",
-  "EpisodeOfCare",
-  "Location",
-  "MedicationRequest",
-  "Observation",
-  "Organization",
-  "Patient",
-  "Practitioner",
-  "Procedure",
-  "ImagingStudy",
-  "Questionnaire",
-  "QuestionnaireResponse",
-  "ServiceRequest",
-]);
-
-async function getAuthenticatedSession() {
-  const session = await getSession();
-  if (!session) return null;
-  return session;
-}
+import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
+import {
+  ALLOWED_RESOURCES,
+  validateFhirPayload,
+} from "@/app/lib/constants/fhir";
 
 type RouteContext = { params: Promise<{ resource: string; id: string }> };
 
@@ -39,7 +17,10 @@ type RouteContext = { params: Promise<{ resource: string; id: string }> };
 // GET /api/fhir/[resource]/[id]
 // ─────────────────────────────────────────────
 export async function GET(_request: NextRequest, { params }: RouteContext) {
-  const session = await getAuthenticatedSession();
+  const limited = checkRateLimit(_request, RATE_LIMITS.api, "fhir");
+  if (limited) return limited;
+
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { error: "Tidak terautentikasi" },
@@ -74,7 +55,10 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 // PUT /api/fhir/[resource]/[id] — update penuh
 // ─────────────────────────────────────────────
 export async function PUT(request: NextRequest, { params }: RouteContext) {
-  const session = await getAuthenticatedSession();
+  const limited = checkRateLimit(request, RATE_LIMITS.api, "fhir");
+  if (limited) return limited;
+
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { error: "Tidak terautentikasi" },
@@ -100,6 +84,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     payload = await request.json();
   } catch {
     return NextResponse.json({ error: "Body tidak valid" }, { status: 400 });
+  }
+
+  const validationError = validateFhirPayload(payload, resource);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
   const result = await sendToSatuSehat({
@@ -117,7 +106,10 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
 // PATCH /api/fhir/[resource]/[id] — update sebagian
 // ─────────────────────────────────────────────
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
-  const session = await getAuthenticatedSession();
+  const limited = checkRateLimit(request, RATE_LIMITS.api, "fhir");
+  if (limited) return limited;
+
+  const session = await getSession();
   if (!session) {
     return NextResponse.json(
       { error: "Tidak terautentikasi" },
@@ -143,6 +135,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     payload = await request.json();
   } catch {
     return NextResponse.json({ error: "Body tidak valid" }, { status: 400 });
+  }
+
+  const validationError = validateFhirPayload(payload, resource);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
   const result = await sendToSatuSehat({
