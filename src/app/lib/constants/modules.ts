@@ -92,11 +92,10 @@ export const FHIR_MODULES: ModuleInfo[] = [
     name: "Organization",
     path: "/organization",
     icon: "🏢",
-    desc: "Data fasilitas",
+    desc: "Data fasilitas & departemen",
     group: "Pasien & Praktisi",
-    methods: ["GET"],
+    methods: ["GET", "POST", "PUT", "PATCH"],
     badge: "Active",
-    hasPage: false,
   },
   {
     name: "MedicationRequest",

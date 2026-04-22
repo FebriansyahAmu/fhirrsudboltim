@@ -719,6 +719,47 @@ export interface ServiceRequestPayload {
   supportingInfo?: FhirReference[];
 }
 
+// ─────────────────────────────────────────────
+// Organization
+// Ref: https://www.hl7.org/fhir/organization.html
+// ─────────────────────────────────────────────
+
+export interface OrganizationTelecom {
+  system: "phone" | "email" | "url";
+  value: string;
+  use: "work" | "home" | "temp" | "old" | "mobile";
+}
+
+export interface OrganizationAddressExtensionItem {
+  url: string;
+  valueCode: string;
+}
+
+export interface OrganizationAddress {
+  use: "work" | "home" | "temp" | "old";
+  type: "postal" | "physical" | "both";
+  line: string[];
+  city: string;
+  postalCode: string;
+  country: string;
+  extension: {
+    url: "https://fhir.kemkes.go.id/r4/StructureDefinition/administrativeCode";
+    extension: OrganizationAddressExtensionItem[];
+  }[];
+}
+
+export interface OrganizationPayload {
+  resourceType: "Organization";
+  id?: string;
+  active: boolean;
+  identifier: { use: string; system: string; value: string }[];
+  type: { coding: FhirCoding[] }[];
+  name: string;
+  telecom?: OrganizationTelecom[];
+  address?: OrganizationAddress[];
+  partOf?: FhirReference;
+}
+
 /**
  * Kode jawaban valueCoding untuk Q0007.
  * Digunakan untuk pertanyaan dengan pilihan "Sesuai" atau "Tidak Sesuai".
