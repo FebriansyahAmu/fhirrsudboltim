@@ -1,5 +1,3 @@
-import { ALLOWED_RESOURCES } from "@/app/lib/constants/fhir";
-
 export function sanitizeText(input: unknown): string {
   if (typeof input !== "string") return "";
   return input
@@ -17,12 +15,33 @@ export function isValidUUID(value: string): boolean {
   return UUID_REGEX.test(value);
 }
 
+const CLIENT_ALLOWED_RESOURCES = new Set([
+  "AllergyIntolerance",
+  "CarePlan",
+  "ClinicalImpression",
+  "Condition",
+  "DiagnosticReport",
+  "Encounter",
+  "EpisodeOfCare",
+  "Location",
+  "MedicationRequest",
+  "Observation",
+  "Organization",
+  "Patient",
+  "Practitioner",
+  "Procedure",
+  "ImagingStudy",
+  "Questionnaire",
+  "QuestionnaireResponse",
+  "ServiceRequest",
+]);
+
 export function buildSafeApiUrl(
   base: string,
   resourceType: string,
   resourceId?: string,
 ): string {
-  if (!ALLOWED_RESOURCES.has(resourceType)) {
+  if (!CLIENT_ALLOWED_RESOURCES.has(resourceType)) {
     throw new Error(`Resource type tidak diizinkan: ${resourceType}`);
   }
 
