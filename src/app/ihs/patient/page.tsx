@@ -275,7 +275,6 @@ export default async function IhsPatientPage({
                     <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-400">
                       <th className="px-4 py-3 font-semibold">NORM</th>
                       <th className="px-4 py-3 font-semibold">Nama</th>
-                      <th className="px-4 py-3 font-semibold">NIK</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Mode</th>
                       <th className="px-4 py-3 font-semibold">Diperbarui</th>
@@ -303,9 +302,6 @@ export default async function IhsPatientPage({
                           </td>
                           <td className="px-4 py-3 font-medium text-slate-800">
                             {r.nama ?? <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                            {r.nikMasked ?? "—"}
                           </td>
                           <td className="px-4 py-3">
                             {r.terkirim ? (

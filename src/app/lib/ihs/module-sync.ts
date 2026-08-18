@@ -182,3 +182,75 @@ export function countForFilter(s: SyncSummary, f: SyncFilter): number {
   if (f === "siap") return s.siap;
   return s.total;
 }
+
+// ── Rakit payload FHIR (preview/autofill) ──────────────────
+// Kolom bookkeeping yang TIDAK ikut ke payload FHIR.
+const GLOBAL_BOOKKEEPING = new Set([
+  "refId",
+  "tableId",
+  "nopen",
+  "sendDate",
+  "getDate",
+  "send",
+  "statusRequest",
+  "httpRequest",
+  "get",
+  "jenis",
+  "barang",
+  "group_racikan",
+  "status_racikan",
+  "penjaminId",
+  "nik",
+  "id", // id resource tidak disertakan di body (dipakai di URL untuk PUT/PATCH)
+]);
+
+function fmtDateVal(d: Date): string {
+  if (
+    d.getHours() === 0 &&
+    d.getMinutes() === 0 &&
+    d.getSeconds() === 0 &&
+    d.getMilliseconds() === 0
+  ) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  return d.toISOString();
+}
+
+/**
+ * Rakit payload FHIR (draft) dari satu baris staging berdasarkan `key`.
+ * Kolom JSON (identifier, name, address, …) sudah dibangun trigger SIMGOS.
+ * 🔒 Read-only. Hasil untuk preview/autofill; operator meninjau sebelum kirim.
+ */
+export async function getModulePayload(
+  spec: IhsModuleSpec,
+  key: string,
+): Promise<{ resourceType: string; payload: Record<string, unknown> } | null> {
+  const table = ident(spec.table);
+  const keyCol = ident(spec.keyCol);
+
+  const rows = await simgosQuery<Record<string, unknown>>(
+    `SELECT * FROM \`${SCHEMA}\`.\`${table}\` WHERE \`${keyCol}\` = ? LIMIT 1`,
+    [key],
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  const exclude = new Set<string>([
+    ...GLOBAL_BOOKKEEPING,
+    ...(spec.payloadExclude ?? []),
+  ]);
+  const bools = new Set<string>(spec.boolCols ?? []);
+
+  const payload: Record<string, unknown> = { resourceType: spec.resourceType };
+  for (const [col, val] of Object.entries(row)) {
+    if (exclude.has(col) || val == null) continue;
+    if (bools.has(col)) payload[col] = Number(val) === 1;
+    else if (val instanceof Date) payload[col] = fmtDateVal(val);
+    else payload[col] = val;
+  }
+
+  return { resourceType: spec.resourceType, payload };
+}

@@ -20,7 +20,7 @@
 
 import { useForm, type Resolver } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import {
   patientFormSchema,
@@ -39,6 +39,12 @@ import { safeJsonParse, safeJsonStringify } from "@/app/lib/utils/security";
 // Props
 // ─────────────────────────────────────────────
 
+/** Payload yang di-autofill dari luar (mis. panel SIMGOS) ke mode Raw JSON. */
+export interface AutofillRaw {
+  json: string;
+  nonce: number; // berubah tiap autofill agar effect re-trigger
+}
+
 interface PatientFormProps {
   method: HttpMethod;
   loading: boolean;
@@ -47,6 +53,7 @@ interface PatientFormProps {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => void;
+  autofillRaw?: AutofillRaw | null;
 }
 
 // ─────────────────────────────────────────────
@@ -262,14 +269,26 @@ function MutationForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: {
   method: HttpMethod;
   loading: boolean;
   onSubmit: (params: { payload: PatientPayload; resourceId?: string }) => void;
+  autofillRaw?: AutofillRaw | null;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+
+  // Autofill dari luar (panel SIMGOS) → buka mode Raw JSON + isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   const needsId = method === "PUT" || method === "PATCH";
 
@@ -964,6 +983,7 @@ export default function PatientForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: PatientFormProps) {
   if (method === "GET") {
     return (
@@ -976,6 +996,7 @@ export default function PatientForm({
       method={method}
       loading={loading}
       onSubmit={(params) => onSubmit(params)}
+      autofillRaw={autofillRaw}
     />
   );
 }

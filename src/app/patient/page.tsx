@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 import DashboardLayout from "@/app/components/layout/DashboardLayout";
 import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
@@ -72,6 +72,11 @@ const AVAILABLE_METHODS: HttpMethod[] = ["POST", "GET", "PUT", "PATCH"];
 
 export default function PatientPage() {
   const [activeMethod, setActiveMethod] = useState<HttpMethod>("POST");
+  const [autofillRaw, setAutofillRaw] = useState<{
+    json: string;
+    nonce: number;
+  } | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const { apiResponse, sendRequest, resetResponse } = useApiRequest({
     resourceType: "Patient",
@@ -80,6 +85,17 @@ export default function PatientPage() {
   const handleMethodChange = (method: HttpMethod) => {
     setActiveMethod(method);
     resetResponse();
+  };
+
+  // Autofill payload dari panel SIMGOS → mode POST + Raw JSON, lalu scroll ke form.
+  const handleUsePayload = (payload: unknown) => {
+    setActiveMethod("POST");
+    resetResponse();
+    setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
+    setTimeout(
+      () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      60,
+    );
   };
 
   const handleSubmit = async (params: {
@@ -136,7 +152,11 @@ export default function PatientPage() {
         </div>
 
         {/* ── SIMGOS: status kirim (collapsible, read-only) ── */}
-        <ModuleSyncPanel module="patient" title="Data Patient di SIMGOS" />
+        <ModuleSyncPanel
+          module="patient"
+          title="Data Patient di SIMGOS"
+          onUsePayload={handleUsePayload}
+        />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs
@@ -165,7 +185,10 @@ export default function PatientPage() {
         {/* ── 4. Request + Response Panel ── */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Form panel */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4 overflow-y-auto max-h-[72vh]">
+          <div
+            ref={formRef}
+            className="scroll-mt-20 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4 overflow-y-auto max-h-[72vh]"
+          >
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Request
@@ -177,6 +200,7 @@ export default function PatientPage() {
               method={activeMethod}
               loading={apiResponse.loading}
               onSubmit={handleSubmit}
+              autofillRaw={autofillRaw}
             />
           </div>
 

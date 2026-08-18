@@ -12,6 +12,11 @@ import {
   LuChevronRight,
   LuTriangleAlert,
   LuShieldCheck,
+  LuCode,
+  LuCopy,
+  LuCheck,
+  LuX,
+  LuWandSparkles,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -38,6 +43,10 @@ interface SyncResponse {
   totalPages: number;
   rows: Row[];
 }
+interface PayloadResponse {
+  resourceType: string;
+  payload: unknown;
+}
 
 const FILTERS: { key: SyncFilter; label: string }[] = [
   { key: "semua", label: "Semua" },
@@ -61,10 +70,13 @@ export default function ModuleSyncPanel({
   module,
   title,
   defaultOpen = false,
+  onUsePayload,
 }: {
   module: string;
   title?: string;
   defaultOpen?: boolean;
+  /** Dipanggil saat user menekan "Autofill ke form" pada modal payload. */
+  onUsePayload?: (payload: unknown, resourceType: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
@@ -73,15 +85,22 @@ export default function ModuleSyncPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Modal payload
+  const [payloadKey, setPayloadKey] = useState<string | null>(null);
+  const [payloadData, setPayloadData] = useState<PayloadResponse | null>(null);
+  const [payloadLoading, setPayloadLoading] = useState(false);
+  const [payloadError, setPayloadError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const load = useCallback(
     async (f: SyncFilter, p: number, signal?: AbortSignal) => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(
-          `/api/ihs/${module}?filter=${f}&page=${p}`,
-          { credentials: "same-origin", signal },
-        );
+        const res = await fetch(`/api/ihs/${module}?filter=${f}&page=${p}`, {
+          credentials: "same-origin",
+          signal,
+        });
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error ?? "Gagal memuat data");
         setData(json as SyncResponse);
@@ -100,6 +119,41 @@ export default function ModuleSyncPanel({
     load(filter, page, ctrl.signal);
     return () => ctrl.abort();
   }, [filter, page, load]);
+
+  const openPayload = useCallback(
+    async (key: string) => {
+      setPayloadKey(key);
+      setPayloadData(null);
+      setPayloadError(null);
+      setCopied(false);
+      setPayloadLoading(true);
+      try {
+        const res = await fetch(
+          `/api/ihs/${module}/${encodeURIComponent(key)}`,
+          { credentials: "same-origin" },
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? "Gagal memuat payload");
+        setPayloadData(json as PayloadResponse);
+      } catch (e) {
+        setPayloadError(e instanceof Error ? e.message : "Gagal memuat payload");
+      } finally {
+        setPayloadLoading(false);
+      }
+    },
+    [module],
+  );
+
+  const closePayload = useCallback(() => setPayloadKey(null), []);
+
+  useEffect(() => {
+    if (!payloadKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPayloadKey(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [payloadKey]);
 
   const changeFilter = (f: SyncFilter) => {
     setFilter(f);
@@ -121,7 +175,28 @@ export default function ModuleSyncPanel({
           ? summary.belum
           : summary.total;
 
-  const colCount = (data?.columns.length ?? 4) + 2;
+  const colCount = (data?.columns.length ?? 4) + 3;
+
+  const payloadJson = payloadData
+    ? JSON.stringify(payloadData.payload, null, 2)
+    : "";
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(payloadJson);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard tidak tersedia */
+    }
+  };
+
+  const handleAutofill = () => {
+    if (payloadData && onUsePayload) {
+      onUsePayload(payloadData.payload, payloadData.resourceType);
+      setPayloadKey(null);
+    }
+  };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
@@ -179,7 +254,9 @@ export default function ModuleSyncPanel({
                 <p className="text-sm font-semibold text-red-800">
                   Gagal membaca data SIMGOS
                 </p>
-                <p className="mt-1 break-words text-xs text-red-700">{error}</p>
+                <p className="mt-1 wrap-break-word text-xs text-red-700">
+                  {error}
+                </p>
                 <button
                   type="button"
                   onClick={() => load(filter, page)}
@@ -249,6 +326,9 @@ export default function ModuleSyncPanel({
                         </th>
                       ))}
                       <th className="px-4 py-2.5 font-semibold">Status</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">
+                        Aksi
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -306,6 +386,16 @@ export default function ModuleSyncPanel({
                               </span>
                             )}
                           </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openPayload(r.key)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                            >
+                              <LuCode className="h-3.5 w-3.5" />
+                              Payload
+                            </button>
+                          </td>
                         </tr>
                       ))
                     ) : (
@@ -357,6 +447,98 @@ export default function ModuleSyncPanel({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Modal payload */}
+      {payloadKey && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={closePayload}
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Payload FHIR"
+            className="relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl sm:rounded-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-teal-50 text-teal-600">
+                  <LuCode className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    Payload {payloadData?.resourceType ?? ""}
+                  </p>
+                  <p className="truncate font-mono text-[11px] text-slate-400">
+                    {data?.keyLabel ?? "Ref"}: {payloadKey}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closePayload}
+                aria-label="Tutup"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <LuX className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto bg-slate-950 p-4">
+              {payloadLoading ? (
+                <p className="text-xs text-slate-400">Memuat payload…</p>
+              ) : payloadError ? (
+                <p className="wrap-break-word text-xs text-red-400">
+                  {payloadError}
+                </p>
+              ) : (
+                <pre className="font-mono text-[11px] leading-relaxed whitespace-pre text-slate-100">
+                  {payloadJson}
+                </pre>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 border-t border-slate-100 bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11px] text-slate-400">
+                Draft dari SIMGOS · tinjau sebelum dikirim
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  disabled={!payloadData}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {copied ? (
+                    <>
+                      <LuCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      Tersalin
+                    </>
+                  ) : (
+                    <>
+                      <LuCopy className="h-3.5 w-3.5" />
+                      Salin
+                    </>
+                  )}
+                </button>
+                {onUsePayload && (
+                  <button
+                    type="button"
+                    onClick={handleAutofill}
+                    disabled={!payloadData}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-linear-to-r from-teal-600 to-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50"
+                  >
+                    <LuWandSparkles className="h-3.5 w-3.5" />
+                    Autofill ke form
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </section>

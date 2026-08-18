@@ -26,6 +26,10 @@ export interface IhsModuleSpec {
   readyFlag: SyncReadyFlag; // flag "siap kirim"
   orderCol: string; // kolom untuk ORDER BY DESC
   columns: SyncColumn[]; // kolom tambahan yang ditampilkan
+  /** Kolom yang dikonversi ke boolean saat merakit payload FHIR. */
+  boolCols?: string[];
+  /** Kolom bookkeeping tambahan yang dikecualikan dari payload. */
+  payloadExclude?: string[];
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -37,12 +41,14 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     keyLabel: "NORM",
     readyFlag: "statusRequest",
     orderCol: "getDate",
+    // NIK sengaja tidak ditampilkan (data pribadi).
     columns: [
       { col: "name", label: "Nama", type: "json-name" },
-      { col: "nik", label: "NIK", type: "nik" },
       { col: "httpRequest", label: "Mode", type: "code" },
       { col: "getDate", label: "Diperbarui", type: "date" },
     ],
+    boolCols: ["active", "deceasedBoolean"],
+    payloadExclude: ["multipleBirthBoolean", "multipleBirthInteger"],
   },
 };
 
