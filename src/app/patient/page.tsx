@@ -16,6 +16,7 @@ import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import PatientForm from "@/app/components/modules/patient/PatientForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { PatientPayload } from "@/app/lib/types/fhir";
@@ -133,6 +134,9 @@ export default function PatientPage() {
             Development
           </span>
         </div>
+
+        {/* ── SIMGOS: status kirim (collapsible, read-only) ── */}
+        <ModuleSyncPanel module="patient" title="Data Patient di SIMGOS" />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs

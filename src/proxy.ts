@@ -24,9 +24,11 @@ const PROTECTED_PREFIXES = [
   "/jpg-to-dcm",
   "/dicom-router",
   "/patch-acsn",
+  "/ihs",
   "/api/fhir",
   "/api/tools",
   "/api/logs",
+  "/api/ihs",
 ];
 
 // Route publik — user yang sudah login di-redirect ke dashboard

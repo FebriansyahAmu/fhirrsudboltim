@@ -11,6 +11,7 @@ Dokumen di sini bersifat teknis dan ditujukan untuk developer & operator.
 | [`GAP-ANALYSIS.md`](./GAP-ANALYSIS.md) | Analisis kesenjangan: temuan keamanan, kepatuhan, keandalan, kualitas — lengkap dengan bukti kode, dampak, dan rekomendasi berprioritas. |
 | [`ENVIRONMENT.md`](./ENVIRONMENT.md) | Daftar lengkap & akurat variabel environment (hasil telusur kode), plus usulan `.env.example`. |
 | [`simgos/`](./simgos/README.md) | **Analisis database SIMGOS (`kemkes-ihs`)** — mesin integrasi Satu Sehat in-database milik SIMRS — plus gap & opsi integrasi vs proyek kita. **Read-only.** |
+| [`workflows/28-modules-integration.md`](./workflows/28-modules-integration.md) | **Rencana kerja 28 modul IHS** — pemetaan modul-by-modul, deteksi terkirim/belum (pola `id`), arsitektur, tracker progres, & keputusan terbuka. |
 
 > `README.md` di root proyek adalah dokumen pengantar/setup. Jika ada
 > perbedaan detail, dokumen di `docs/` mengikuti kondisi kode terkini

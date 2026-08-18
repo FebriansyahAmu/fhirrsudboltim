@@ -7,6 +7,7 @@ import { useEffect, useCallback } from "react";
 import type { IconType } from "react-icons";
 import {
   LuLayoutDashboard,
+  LuDatabase,
   LuStethoscope,
   LuUsers,
   LuPill,
@@ -126,13 +127,22 @@ function NavContent({
 }) {
   return (
     <>
-      <div className="px-3 pb-2 pt-4">
+      <div className="space-y-0.5 px-3 pb-2 pt-4">
         <NavItem
           icon={LuLayoutDashboard}
           name="Dashboard"
           desc="Overview pengiriman"
           path="/dashboard"
           isActive={pathname === "/dashboard"}
+          collapsed={collapsed}
+          onClick={onNavigate}
+        />
+        <NavItem
+          icon={LuDatabase}
+          name="Monitor SIMGOS"
+          desc="Status kirim per modul"
+          path="/ihs/patient"
+          isActive={pathname.startsWith("/ihs")}
           collapsed={collapsed}
           onClick={onNavigate}
         />
