@@ -10,6 +10,7 @@ Dokumen di sini bersifat teknis dan ditujukan untuk developer & operator.
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Arsitektur sistem: lapisan, alur request, auth/sesi, manajemen token OAuth2, model data, utilitas DICOM. |
 | [`GAP-ANALYSIS.md`](./GAP-ANALYSIS.md) | Analisis kesenjangan: temuan keamanan, kepatuhan, keandalan, kualitas — lengkap dengan bukti kode, dampak, dan rekomendasi berprioritas. |
 | [`ENVIRONMENT.md`](./ENVIRONMENT.md) | Daftar lengkap & akurat variabel environment (hasil telusur kode), plus usulan `.env.example`. |
+| [`simgos/`](./simgos/README.md) | **Analisis database SIMGOS (`kemkes-ihs`)** — mesin integrasi Satu Sehat in-database milik SIMRS — plus gap & opsi integrasi vs proyek kita. **Read-only.** |
 
 > `README.md` di root proyek adalah dokumen pengantar/setup. Jika ada
 > perbedaan detail, dokumen di `docs/` mengikuti kondisi kode terkini

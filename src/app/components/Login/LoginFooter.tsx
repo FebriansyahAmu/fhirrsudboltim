@@ -1,9 +1,7 @@
 export default function LoginFooter() {
   return (
-    <div className="mt-8 text-center">
-      <p className="text-xs text-gray-500">
-        RSUD Bolaang Mongondow Timur © 2024 - Integrasi Satu Sehat FHIR
-      </p>
-    </div>
+    <p className="mt-8 text-center text-xs text-slate-400">
+      RSUD Bolaang Mongondow Timur © 2026 · Integrasi Satu Sehat FHIR R4
+    </p>
   );
 }

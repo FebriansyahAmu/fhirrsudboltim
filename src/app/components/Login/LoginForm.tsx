@@ -4,8 +4,8 @@ import { useState } from "react";
 import {
   HiOutlineEye,
   HiOutlineEyeSlash,
-  HiLockClosed,
-  HiExclamationCircle,
+  HiOutlineLockClosed,
+  HiOutlineExclamationCircle,
   HiOutlineUser,
 } from "react-icons/hi2";
 
@@ -45,128 +45,134 @@ export default function LoginForm() {
       } else {
         setError("Username atau password salah");
       }
-    } catch (err) {
+    } catch {
       setError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const inputClass = (invalid: boolean) =>
+    `w-full rounded-xl border bg-slate-50/70 py-3 pl-11 pr-4 text-[15px] text-slate-900 placeholder-slate-400 transition-all duration-150 focus:bg-white focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
+      invalid
+        ? "border-red-300 focus:border-red-400 focus:ring-red-500/15"
+        : "border-slate-200 focus:border-teal-500 focus:ring-teal-500/15"
+    }`;
+
   return (
-    <div className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl border border-white/50 p-8 sm:p-10">
-      <form className="space-y-6" onSubmit={handleSubmit}>
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-            <div className="flex items-center">
-              <div className="shrink-0">
-                <HiExclamationCircle className="h-5 w-5 text-red-400" />
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Username Field */}
-        <div>
-          <label
-            htmlFor="username"
-            className="block text-sm font-semibold text-gray-700 mb-2"
-          >
-            Username
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <HiOutlineUser className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              required
-              className="w-full pl-12 pr-4 py-4 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg placeholder-gray-500"
-              placeholder="Masukkan username"
-              value={formData.username}
-              onChange={handleChange}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-
-        {/* Password Field */}
-        <div>
-          <label
-            htmlFor="password"
-            className="block text-sm font-semibold text-gray-700 mb-2"
-          >
-            Password
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <HiLockClosed className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              required
-              className="w-full pl-12 pr-12 py-4 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg placeholder-gray-500"
-              placeholder="Masukkan password"
-              value={formData.password}
-              onChange={handleChange}
-              disabled={isLoading}
-            />
-            <button
-              type="button"
-              className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading}
-            >
-              {showPassword ? (
-                <HiOutlineEyeSlash className="h-5 w-5" />
-              ) : (
-                <HiOutlineEye className="h-5 w-5" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Login Button - sama persis */}
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-lg font-semibold rounded-2xl text-white bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-500/50 focus:outline-none transition-all duration-200 shadow-xl hover:shadow-2xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+    <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5"
         >
-          {isLoading ? (
-            <>
-              <svg
-                className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              Sedang masuk...
-            </>
-          ) : (
-            "Masuk ke Sistem"
-          )}
-        </button>
-      </form>
-    </div>
+          <HiOutlineExclamationCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+          <p className="text-sm font-medium text-red-800">{error}</p>
+        </div>
+      )}
+
+      {/* Username */}
+      <div>
+        <label
+          htmlFor="username"
+          className="mb-1.5 block text-sm font-semibold text-slate-700"
+        >
+          Username
+        </label>
+        <div className="group relative">
+          <HiOutlineUser className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-teal-600" />
+          <input
+            id="username"
+            name="username"
+            type="text"
+            required
+            autoComplete="username"
+            autoFocus
+            aria-invalid={!!error}
+            className={inputClass(!!error)}
+            placeholder="Masukkan username"
+            value={formData.username}
+            onChange={handleChange}
+            disabled={isLoading}
+          />
+        </div>
+      </div>
+
+      {/* Password */}
+      <div>
+        <label
+          htmlFor="password"
+          className="mb-1.5 block text-sm font-semibold text-slate-700"
+        >
+          Password
+        </label>
+        <div className="group relative">
+          <HiOutlineLockClosed className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-teal-600" />
+          <input
+            id="password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            required
+            autoComplete="current-password"
+            aria-invalid={!!error}
+            className={`${inputClass(!!error)} pr-11`}
+            placeholder="Masukkan password"
+            value={formData.password}
+            onChange={handleChange}
+            disabled={isLoading}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            disabled={isLoading}
+            aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+            aria-pressed={showPassword}
+            className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:opacity-60"
+          >
+            {showPassword ? (
+              <HiOutlineEyeSlash className="h-5 w-5" />
+            ) : (
+              <HiOutlineEye className="h-5 w-5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Submit */}
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-teal-600 to-emerald-600 px-4 py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-teal-600/20 transition-all duration-200 hover:from-teal-500 hover:to-emerald-500 hover:shadow-xl hover:shadow-teal-600/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/35 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none motion-safe:hover:-translate-y-0.5"
+      >
+        {isLoading ? (
+          <>
+            <svg
+              className="h-5 w-5 animate-spin text-white"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            Sedang masuk…
+          </>
+        ) : (
+          "Masuk ke Sistem"
+        )}
+      </button>
+    </form>
   );
 }
