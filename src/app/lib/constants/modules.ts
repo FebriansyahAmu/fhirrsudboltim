@@ -2,12 +2,34 @@
 // Konfigurasi semua modul FHIR yang tersedia
 
 import type { ModuleInfo } from "../types/api";
+import {
+  LuClipboardList,
+  LuStethoscope,
+  LuActivity,
+  LuFlaskConical,
+  LuSyringe,
+  LuHandshake,
+  LuMapPin,
+  LuUserRound,
+  LuBriefcaseMedical,
+  LuBuilding2,
+  LuPill,
+  LuTriangleAlert,
+  LuScan,
+  LuFileChartColumn,
+  LuClipboardPlus,
+  LuFolderOpen,
+  LuClipboardCheck,
+  LuImages,
+  LuRadioTower,
+  LuFilePenLine,
+} from "react-icons/lu";
 
 export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "CarePlan",
     path: "/careplan",
-    icon: "📋",
+    icon: LuClipboardList,
     desc: "Rencana perawatan pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -16,7 +38,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "ClinicalImpression",
     path: "/clinical-impression",
-    icon: "🩺",
+    icon: LuStethoscope,
     desc: "Penilaian klinis pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -25,7 +47,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Condition",
     path: "/condition",
-    icon: "🏥",
+    icon: LuActivity,
     desc: "Kondisi & diagnosis",
     group: "Klinis",
     methods: ["POST", "GET", "PUT"],
@@ -35,7 +57,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Observation",
     path: "/observation",
-    icon: "🔬",
+    icon: LuFlaskConical,
     desc: "Hasil observasi & lab",
     group: "Klinis",
     methods: ["POST", "GET"],
@@ -45,7 +67,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Procedure",
     path: "/procedure",
-    icon: "⚕️",
+    icon: LuSyringe,
     desc: "Tindakan medis",
     group: "Klinis",
     methods: ["POST", "GET", "PUT"],
@@ -55,7 +77,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Encounter",
     path: "/encounter",
-    icon: "🤝",
+    icon: LuHandshake,
     desc: "Kunjungan pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -64,7 +86,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Location",
     path: "/location",
-    icon: "📍",
+    icon: LuMapPin,
     desc: "Lokasi poli & ruangan",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -73,7 +95,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Patient",
     path: "/patient",
-    icon: "👤",
+    icon: LuUserRound,
     desc: "Data pasien",
     group: "Pasien & Praktisi",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -82,7 +104,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Practitioner",
     path: "/practitioner",
-    icon: "👨‍⚕️",
+    icon: LuBriefcaseMedical,
     desc: "Data dokter",
     group: "Pasien & Praktisi",
     methods: ["GET"],
@@ -91,7 +113,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "Organization",
     path: "/organization",
-    icon: "🏢",
+    icon: LuBuilding2,
     desc: "Data fasilitas & departemen",
     group: "Pasien & Praktisi",
     methods: ["GET", "POST", "PUT", "PATCH"],
@@ -100,7 +122,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "MedicationRequest",
     path: "/medication-request",
-    icon: "💊",
+    icon: LuPill,
     desc: "Resep obat",
     group: "Obat & Diagnosa",
     methods: ["POST", "GET"],
@@ -110,7 +132,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "AllergyIntolerance",
     path: "/allergy",
-    icon: "⚠️",
+    icon: LuTriangleAlert,
     desc: "Alergi pasien",
     group: "Obat & Diagnosa",
     methods: ["POST", "GET"],
@@ -119,7 +141,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "ImagingStudy",
     path: "/imaging-study",
-    icon: "🩻",
+    icon: LuScan,
     desc: "Pencarian studi pencitraan radiologi (DICOM)",
     group: "Klinis",
     methods: ["GET"],
@@ -128,7 +150,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "DiagnosticReport",
     path: "/diagnostic-report",
-    icon: "📊",
+    icon: LuFileChartColumn,
     desc: "Laporan diagnostik",
     group: "Obat & Diagnosa",
     methods: ["POST", "GET"],
@@ -138,7 +160,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "ServiceRequest",
     path: "/service-request",
-    icon: "🔬",
+    icon: LuClipboardPlus,
     desc: "Permintaan pemeriksaan radiologi",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -147,7 +169,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "EpisodeOfCare",
     path: "/episode-of-care",
-    icon: "📁",
+    icon: LuFolderOpen,
     desc: "Episode perawatan pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -156,7 +178,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "QuestionnaireResponse",
     path: "/questionnaire-response",
-    icon: "📝",
+    icon: LuClipboardCheck,
     desc: "Jawaban kuesioner klinis",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
@@ -165,7 +187,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "JpgToDicom",
     path: "/jpg-to-dcm",
-    icon: "🔄",
+    icon: LuImages,
     desc: "Konversi file JPG/JPEG ke format DICOM (CR Thorax PA)",
     group: "Utilitas",
     methods: [],
@@ -174,7 +196,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "DicomRouter",
     path: "/dicom-router",
-    icon: "📡",
+    icon: LuRadioTower,
     desc: "Kirim file DICOM ke DICOM Router via storescu (DCMTK)",
     group: "Utilitas",
     methods: [],
@@ -183,7 +205,7 @@ export const FHIR_MODULES: ModuleInfo[] = [
   {
     name: "PatchAcsn",
     path: "/patch-acsn",
-    icon: "✏️",
+    icon: LuFilePenLine,
     desc: "Tambahkan atau ubah Accession Number pada file .dcm yang sudah ada",
     group: "Utilitas",
     methods: [],

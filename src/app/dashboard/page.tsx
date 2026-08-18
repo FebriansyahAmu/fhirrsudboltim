@@ -4,6 +4,13 @@ import { getSession } from "@/app/lib/session";
 import { getDeliveryStats, getRecentLogs } from "@/app/lib/dal/fhir.dal";
 import type { HttpMethod } from "@/app/lib/types/api";
 import Link from "next/link";
+import {
+  LuSend,
+  LuCircleCheck,
+  LuCircleX,
+  LuCalendarDays,
+  LuArrowRight,
+} from "react-icons/lu";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -125,24 +132,27 @@ export default async function DashboardPage() {
       sub: stats.lastActivityAt
         ? `Terakhir: ${fmtRelative(stats.lastActivityAt)}`
         : "Belum ada kiriman",
-      icon: "📤",
+      icon: LuSend,
       iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
       valueCls: "text-slate-900",
     },
     {
       label: "Berhasil",
       value: fmt(stats.success),
       sub: `${successRate}% dari total`,
-      icon: "✅",
+      icon: LuCircleCheck,
       iconBg: "bg-emerald-50",
+      iconColor: "text-emerald-600",
       valueCls: "text-emerald-700",
     },
     {
       label: "Gagal",
       value: fmt(stats.failed),
       sub: `${failRate}% dari total`,
-      icon: "❌",
+      icon: LuCircleX,
       iconBg: "bg-red-50",
+      iconColor: "text-red-500",
       valueCls: stats.failed > 0 ? "text-red-600" : "text-slate-400",
     },
     {
@@ -152,8 +162,9 @@ export default async function DashboardPage() {
         stats.today > 0
           ? `${fmt(stats.todaySuccess)} berhasil · ${fmt(stats.todayFailed)} gagal`
           : "Belum ada kiriman hari ini",
-      icon: "📅",
+      icon: LuCalendarDays,
       iconBg: "bg-blue-50",
+      iconColor: "text-blue-600",
       valueCls: stats.today > 0 ? "text-blue-700" : "text-slate-400",
     },
   ];
@@ -198,9 +209,9 @@ export default async function DashboardPage() {
             >
               <div className="flex items-center justify-between mb-3">
                 <span
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center text-base leading-none ${stat.iconBg}`}
+                  className={`grid h-9 w-9 place-items-center rounded-xl ${stat.iconBg}`}
                 >
-                  {stat.icon}
+                  <stat.icon className={`h-4.5 w-4.5 ${stat.iconColor}`} />
                 </span>
                 <span className="text-[10px] font-medium text-slate-400 text-right leading-tight max-w-24">
                   {stat.sub}
@@ -291,7 +302,7 @@ export default async function DashboardPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {[...fhirModules]
               .sort((a, b) => {
                 const rank = (m: typeof a) =>
@@ -315,8 +326,8 @@ export default async function DashboardPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl leading-none">
-                          {mod.icon}
+                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/70 text-slate-700 ring-1 ring-black/5 shadow-sm">
+                          <mod.icon className="h-5 w-5" />
                         </span>
                         <div>
                           <p className="text-sm font-bold text-slate-800">
@@ -354,22 +365,9 @@ export default async function DashboardPage() {
                       ))}
                     </div>
                     {!isDisabled && (
-                      <div className="flex items-center gap-1 mt-4 text-teal-600 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="mt-4 flex items-center gap-1 text-[11px] font-semibold text-teal-600 opacity-0 transition-opacity group-hover:opacity-100">
                         Buka modul
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                        >
-                          <path
-                            d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <LuArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                       </div>
                     )}
                   </div>
@@ -396,7 +394,7 @@ export default async function DashboardPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {utilsModules.map((mod) => {
               const accent = MODULE_ACCENT[mod.name] ?? {
                 from: "from-slate-50",
@@ -408,7 +406,9 @@ export default async function DashboardPage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl leading-none">{mod.icon}</span>
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/70 text-slate-700 ring-1 ring-black/5 shadow-sm">
+                        <mod.icon className="h-5 w-5" />
+                      </span>
                       <div>
                         <p className="text-sm font-bold text-slate-800">
                           {mod.name}
@@ -427,17 +427,9 @@ export default async function DashboardPage() {
                   <p className="text-xs text-slate-500 leading-relaxed mb-4">
                     {mod.desc}
                   </p>
-                  <div className="flex items-center gap-1 text-teal-600 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-teal-600 opacity-0 transition-opacity group-hover:opacity-100">
                     Buka alat
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path
-                        d="M2.5 6H9.5M7 3.5L9.5 6L7 8.5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <LuArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </div>
               );

@@ -900,6 +900,11 @@ function generateEncounterNumber(): string {
   const dateKey = `${yy}${mm}${dd}`;
   const storageKey = `encounter_seq_${dateKey}`;
 
+  // SSR guard — localStorage hanya tersedia di browser (mencegah crash prerender)
+  if (typeof window === "undefined") {
+    return `${dateKey}0001`;
+  }
+
   const prev = parseInt(localStorage.getItem(storageKey) ?? "0", 10);
   const next = prev + 1;
   localStorage.setItem(storageKey, String(next));

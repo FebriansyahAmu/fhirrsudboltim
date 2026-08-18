@@ -1,6 +1,8 @@
 // lib/types/api.ts
 // Tipe-tipe untuk API response, log pengiriman, dan UI state
 
+import type { IconType } from "react-icons";
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type SendStatus = "success" | "error" | "pending";
@@ -30,7 +32,7 @@ export interface DeliveryLog {
 export interface ModuleInfo {
   name: string;
   path: string;
-  icon: string;
+  icon: IconType;
   desc: string;
   group: ModuleGroup;
   methods: HttpMethod[];
