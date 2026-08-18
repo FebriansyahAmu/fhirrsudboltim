@@ -30,6 +30,12 @@ export interface IhsModuleSpec {
   boolCols?: string[];
   /** Kolom bookkeeping tambahan yang dikecualikan dari payload. */
   payloadExclude?: string[];
+  /**
+   * Bila true, baris "belum terkirim" bisa dirakit payload-nya langsung dari
+   * tabel SUMBER (mis. `master.pasien`) — bukan dari staging yang kosong.
+   * Dipakai untuk alur "POST manual". Assembler-nya modul-spesifik.
+   */
+  createFromMaster?: boolean;
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -41,14 +47,15 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     keyLabel: "NORM",
     readyFlag: "statusRequest",
     orderCol: "getDate",
-    // NIK sengaja tidak ditampilkan (data pribadi).
     columns: [
+      { col: "nik", label: "NIK", type: "code" },
       { col: "name", label: "Nama", type: "json-name" },
       { col: "httpRequest", label: "Mode", type: "code" },
       { col: "getDate", label: "Diperbarui", type: "date" },
     ],
     boolCols: ["active", "deceasedBoolean"],
     payloadExclude: ["multipleBirthBoolean", "multipleBirthInteger"],
+    createFromMaster: true,
   },
 };
 

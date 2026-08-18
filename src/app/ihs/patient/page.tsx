@@ -274,6 +274,7 @@ export default async function IhsPatientPage({
                   <thead>
                     <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-400">
                       <th className="px-4 py-3 font-semibold">NORM</th>
+                      <th className="px-4 py-3 font-semibold">NIK</th>
                       <th className="px-4 py-3 font-semibold">Nama</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Mode</th>
@@ -299,6 +300,9 @@ export default async function IhsPatientPage({
                         >
                           <td className="px-4 py-3 font-mono text-xs text-slate-600">
                             {r.refId}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                            {r.nik ?? <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-4 py-3 font-medium text-slate-800">
                             {r.nama ?? <span className="text-slate-300">—</span>}
@@ -392,8 +396,8 @@ export default async function IhsPatientPage({
             {/* Catatan read-only */}
             <p className="flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
               <LuShieldCheck className="h-3.5 w-3.5" />
-              Halaman ini hanya membaca dari SIMGOS (SELECT). NIK dimask sebagian.
-              Belum ada pengiriman data.
+              Halaman ini hanya membaca dari SIMGOS (SELECT). Belum ada
+              pengiriman data.
             </p>
           </>
         )}

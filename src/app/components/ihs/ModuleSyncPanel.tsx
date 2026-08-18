@@ -42,11 +42,16 @@ interface SyncResponse {
   totalRows: number;
   totalPages: number;
   rows: Row[];
+  createFromMaster?: boolean;
 }
 interface PayloadResponse {
   resourceType: string;
   payload: unknown;
+  /** Field wajib yang kosong di sumber (hanya saat source=master). */
+  missing?: string[];
 }
+
+type PayloadSource = "staging" | "master";
 
 const FILTERS: { key: SyncFilter; label: string }[] = [
   { key: "semua", label: "Semua" },
@@ -87,6 +92,7 @@ export default function ModuleSyncPanel({
 
   // Modal payload
   const [payloadKey, setPayloadKey] = useState<string | null>(null);
+  const [payloadSource, setPayloadSource] = useState<PayloadSource>("staging");
   const [payloadData, setPayloadData] = useState<PayloadResponse | null>(null);
   const [payloadLoading, setPayloadLoading] = useState(false);
   const [payloadError, setPayloadError] = useState<string | null>(null);
@@ -121,15 +127,17 @@ export default function ModuleSyncPanel({
   }, [filter, page, load]);
 
   const openPayload = useCallback(
-    async (key: string) => {
+    async (key: string, source: PayloadSource = "staging") => {
       setPayloadKey(key);
+      setPayloadSource(source);
       setPayloadData(null);
       setPayloadError(null);
       setCopied(false);
       setPayloadLoading(true);
       try {
+        const qs = source === "master" ? "?source=master" : "";
         const res = await fetch(
-          `/api/ihs/${module}/${encodeURIComponent(key)}`,
+          `/api/ihs/${module}/${encodeURIComponent(key)}${qs}`,
           { credentials: "same-origin" },
         );
         const json = await res.json();
@@ -176,6 +184,7 @@ export default function ModuleSyncPanel({
           : summary.total;
 
   const colCount = (data?.columns.length ?? 4) + 3;
+  const supportsMaster = data?.createFromMaster ?? false;
 
   const payloadJson = payloadData
     ? JSON.stringify(payloadData.payload, null, 2)
@@ -387,14 +396,26 @@ export default function ModuleSyncPanel({
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => openPayload(r.key)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
-                            >
-                              <LuCode className="h-3.5 w-3.5" />
-                              Payload
-                            </button>
+                            {!r.sent && supportsMaster ? (
+                              <button
+                                type="button"
+                                onClick={() => openPayload(r.key, "master")}
+                                title="Rakit payload dari data master & isikan ke form"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+                              >
+                                <LuWandSparkles className="h-3.5 w-3.5" />
+                                Salin ke form
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openPayload(r.key, "staging")}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                              >
+                                <LuCode className="h-3.5 w-3.5" />
+                                Payload
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -503,9 +524,18 @@ export default function ModuleSyncPanel({
             </div>
 
             <div className="flex flex-col gap-2 border-t border-slate-100 bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-[11px] text-slate-400">
-                Draft dari SIMGOS · tinjau sebelum dikirim
-              </p>
+              {payloadData?.missing && payloadData.missing.length > 0 ? (
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700">
+                  <LuTriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                  Field wajib kosong: {payloadData.missing.join(", ")} — lengkapi di form
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-400">
+                  {payloadSource === "master"
+                    ? "Dirakit dari master SIMGOS · tinjau sebelum POST manual"
+                    : "Draft dari SIMGOS · tinjau sebelum dikirim"}
+                </p>
+              )}
               <div className="flex items-center gap-2">
                 <button
                   type="button"

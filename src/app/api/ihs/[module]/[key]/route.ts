@@ -7,6 +7,7 @@ import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { getModuleSpec } from "@/app/lib/ihs/registry";
 import { getModulePayload } from "@/app/lib/ihs/module-sync";
+import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +35,28 @@ export async function GET(
     return NextResponse.json({ error: "Key tidak valid" }, { status: 400 });
   }
 
+  // source=master → rakit payload dari tabel SUMBER (alur POST manual),
+  // bukan dari staging yang bisa kosong utk baris belum-terkirim.
+  const source = request.nextUrl.searchParams.get("source");
+
   try {
+    if (source === "master") {
+      if (!spec.createFromMaster || spec.module !== "patient") {
+        return NextResponse.json(
+          { error: `Modul '${module}' tidak mendukung rakit dari sumber` },
+          { status: 400 },
+        );
+      }
+      const result = await getPatientCreatePayload(key);
+      if (!result) {
+        return NextResponse.json(
+          { error: "Data pasien tidak ditemukan di master" },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json(result);
+    }
+
     const result = await getModulePayload(spec, key);
     if (!result) {
       return NextResponse.json({ error: "Data tidak ditemukan" }, { status: 404 });

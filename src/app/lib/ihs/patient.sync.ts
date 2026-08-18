@@ -25,7 +25,7 @@ export interface PatientSyncSummary {
 export interface PatientSyncRow {
   refId: string; // NORM (kunci sumber SIMGOS)
   nama: string | null;
-  nikMasked: string | null;
+  nik: string | null;
   satuSehatId: string | null; // id — null jika belum terkirim
   terkirim: boolean;
   siap: boolean; // statusRequest = 1
@@ -52,16 +52,6 @@ function parseName(raw: unknown): string | null {
     /* abaikan */
   }
   return null;
-}
-
-/** Masking NIK — tampilkan 4 digit awal + 2 digit akhir. */
-function maskNik(nik: unknown): string | null {
-  if (typeof nik !== "string" || nik.length < 6) {
-    return typeof nik === "string" && nik ? "••••" : null;
-  }
-  const head = nik.slice(0, 4);
-  const tail = nik.slice(-2);
-  return `${head}${"•".repeat(nik.length - 6)}${tail}`;
 }
 
 function toIso(v: unknown): string | null {
@@ -120,7 +110,7 @@ export async function getPatientSyncRows(
   return rows.map((r) => ({
     refId: String(r.refId ?? ""),
     nama: parseName(r.name),
-    nikMasked: maskNik(r.nik),
+    nik: r.nik ? String(r.nik) : null,
     satuSehatId: r.id ? String(r.id) : null,
     terkirim: r.id != null,
     siap: toNum(r.statusRequest) === 1,

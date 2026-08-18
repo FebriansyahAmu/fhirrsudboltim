@@ -56,6 +56,7 @@ export async function GET(
       resourceType: spec.resourceType,
       keyLabel: spec.keyLabel,
       columns: spec.columns.map((c) => ({ label: c.label, type: c.type })),
+      createFromMaster: spec.createFromMaster ?? false,
       summary,
       filter,
       page,
