@@ -17,6 +17,9 @@ import {
   LuCheck,
   LuX,
   LuWandSparkles,
+  LuStickyNote,
+  LuPencil,
+  LuTrash2,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -30,8 +33,17 @@ interface Row {
   key: string;
   sent: boolean;
   ready: boolean;
+  attempted: boolean;
   satuSehatId: string | null;
   cells: Cell[];
+}
+
+interface NoteCounts {
+  total: number;
+  merah: number;
+  kuning: number;
+  hijau: number;
+  biru: number;
 }
 interface SyncResponse {
   keyLabel: string;
@@ -43,6 +55,9 @@ interface SyncResponse {
   totalPages: number;
   rows: Row[];
   createFromMaster?: boolean;
+  notes?: Record<string, RowNoteApi>;
+  noteCounts?: NoteCounts;
+  noteFilter?: string;
 }
 interface PayloadResponse {
   resourceType: string;
@@ -52,6 +67,45 @@ interface PayloadResponse {
 }
 
 type PayloadSource = "staging" | "master";
+
+interface RowNoteApi {
+  mark: string | null;
+  note: string | null;
+  nik: string | null;
+  updatedAt: string;
+}
+
+// Penanda warna → kelas Tailwind (dot, tint baris, aksen).
+const MARK_META: Record<
+  string,
+  { label: string; dot: string; row: string; chip: string }
+> = {
+  merah: {
+    label: "Perlu koreksi",
+    dot: "bg-red-500",
+    row: "bg-red-50/70",
+    chip: "bg-red-50 text-red-700 ring-red-200",
+  },
+  kuning: {
+    label: "Ditinjau",
+    dot: "bg-amber-500",
+    row: "bg-amber-50/70",
+    chip: "bg-amber-50 text-amber-700 ring-amber-200",
+  },
+  hijau: {
+    label: "Selesai",
+    dot: "bg-emerald-500",
+    row: "bg-emerald-50/70",
+    chip: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  },
+  biru: {
+    label: "Catatan",
+    dot: "bg-blue-500",
+    row: "bg-blue-50/70",
+    chip: "bg-blue-50 text-blue-700 ring-blue-200",
+  },
+};
+const MARK_ORDER = ["merah", "kuning", "hijau", "biru"] as const;
 
 const FILTERS: { key: SyncFilter; label: string }[] = [
   { key: "semua", label: "Semua" },
@@ -85,6 +139,7 @@ export default function ModuleSyncPanel({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
+  const [noteFilter, setNoteFilter] = useState<string>("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SyncResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,18 +153,29 @@ export default function ModuleSyncPanel({
   const [payloadError, setPayloadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Anotasi (catatan + mark warna) per baris
+  const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
+  const [noteKey, setNoteKey] = useState<string | null>(null);
+  const [noteMark, setNoteMark] = useState<string>("");
+  const [noteText, setNoteText] = useState<string>("");
+  const [noteNik, setNoteNik] = useState<string | null>(null);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+
   const load = useCallback(
-    async (f: SyncFilter, p: number, signal?: AbortSignal) => {
+    async (f: SyncFilter, p: number, nf: string, signal?: AbortSignal) => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/ihs/${module}?filter=${f}&page=${p}`, {
-          credentials: "same-origin",
-          signal,
-        });
+        const noteQs = nf ? `&note=${nf}` : "";
+        const res = await fetch(
+          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}`,
+          { credentials: "same-origin", signal },
+        );
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error ?? "Gagal memuat data");
         setData(json as SyncResponse);
+        setNotesMap((json as SyncResponse).notes ?? {});
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Gagal memuat data");
@@ -122,9 +188,9 @@ export default function ModuleSyncPanel({
 
   useEffect(() => {
     const ctrl = new AbortController();
-    load(filter, page, ctrl.signal);
+    load(filter, page, noteFilter, ctrl.signal);
     return () => ctrl.abort();
-  }, [filter, page, load]);
+  }, [filter, page, noteFilter, load]);
 
   const openPayload = useCallback(
     async (key: string, source: PayloadSource = "staging") => {
@@ -165,6 +231,12 @@ export default function ModuleSyncPanel({
 
   const changeFilter = (f: SyncFilter) => {
     setFilter(f);
+    setNoteFilter("");
+    setPage(1);
+  };
+
+  const changeNoteFilter = (nf: string) => {
+    setNoteFilter((cur) => (cur === nf ? "" : nf));
     setPage(1);
   };
 
@@ -183,8 +255,9 @@ export default function ModuleSyncPanel({
           ? summary.belum
           : summary.total;
 
-  const colCount = (data?.columns.length ?? 4) + 3;
+  const colCount = (data?.columns.length ?? 4) + 4;
   const supportsMaster = data?.createFromMaster ?? false;
+  const noteCounts = data?.noteCounts;
 
   const payloadJson = payloadData
     ? JSON.stringify(payloadData.payload, null, 2)
@@ -206,6 +279,63 @@ export default function ModuleSyncPanel({
       setPayloadKey(null);
     }
   };
+
+  // ── Editor catatan ──
+  const openNoteEditor = useCallback(
+    (r: Row) => {
+      const existing = notesMap[r.key];
+      setNoteKey(r.key);
+      setNoteMark(existing?.mark ?? "");
+      setNoteText(existing?.note ?? "");
+      const nikCell = r.cells.find((c) => c.label.toUpperCase() === "NIK");
+      setNoteNik(existing?.nik ?? nikCell?.value ?? null);
+      setNoteError(null);
+    },
+    [notesMap],
+  );
+
+  const submitNote = useCallback(
+    async (clear = false) => {
+      if (!noteKey) return;
+      setNoteSaving(true);
+      setNoteError(null);
+      try {
+        const res = await fetch(`/api/ihs/${module}/notes`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(
+            clear
+              ? { key: noteKey, mark: "", note: "" }
+              : { key: noteKey, mark: noteMark, note: noteText, nik: noteNik },
+          ),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? "Gagal menyimpan catatan");
+        setNotesMap((m) => {
+          const next = { ...m };
+          if (json.note) next[noteKey] = json.note as RowNoteApi;
+          else delete next[noteKey];
+          return next;
+        });
+        setNoteKey(null);
+      } catch (e) {
+        setNoteError(e instanceof Error ? e.message : "Gagal menyimpan catatan");
+      } finally {
+        setNoteSaving(false);
+      }
+    },
+    [noteKey, noteMark, noteText, noteNik, module],
+  );
+
+  useEffect(() => {
+    if (!noteKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNoteKey(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [noteKey]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
@@ -268,7 +398,7 @@ export default function ModuleSyncPanel({
                 </p>
                 <button
                   type="button"
-                  onClick={() => load(filter, page)}
+                  onClick={() => load(filter, page, noteFilter)}
                   className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-red-200 transition-colors hover:bg-red-100"
                 >
                   <LuRefreshCw className="h-3.5 w-3.5" />
@@ -310,7 +440,7 @@ export default function ModuleSyncPanel({
                 </div>
                 <button
                   type="button"
-                  onClick={() => load(filter, page)}
+                  onClick={() => load(filter, page, noteFilter)}
                   disabled={loading}
                   className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
                 >
@@ -319,6 +449,55 @@ export default function ModuleSyncPanel({
                   />
                   Muat ulang
                 </button>
+              </div>
+
+              {/* Filter catatan (warna) */}
+              <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+                <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+                  <LuStickyNote className="h-3.5 w-3.5" />
+                  Catatan:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeNoteFilter("ada")}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    noteFilter === "ada"
+                      ? "bg-slate-800 text-white"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  }`}
+                >
+                  Ada catatan
+                  <span className="tabular-nums opacity-80">
+                    {fmt(noteCounts?.total ?? 0)}
+                  </span>
+                </button>
+                {MARK_ORDER.map((m) => {
+                  const active = noteFilter === m;
+                  const meta = MARK_META[m];
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => changeNoteFilter(m)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold ring-1 transition-colors ${
+                        active
+                          ? meta.chip
+                          : "bg-white text-slate-500 ring-slate-200 hover:bg-slate-50"
+                      }`}
+                      title={meta.label}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} />
+                      <span className="tabular-nums">
+                        {fmt(noteCounts?.[m] ?? 0)}
+                      </span>
+                    </button>
+                  );
+                })}
+                {noteFilter && (
+                  <span className="ml-1 text-[11px] text-slate-400">
+                    · menampilkan baris bercatatan
+                  </span>
+                )}
               </div>
 
               {/* Tabel */}
@@ -335,6 +514,7 @@ export default function ModuleSyncPanel({
                         </th>
                       ))}
                       <th className="px-4 py-2.5 font-semibold">Status</th>
+                      <th className="px-4 py-2.5 font-semibold">Catatan</th>
                       <th className="px-4 py-2.5 text-right font-semibold">
                         Aksi
                       </th>
@@ -351,10 +531,17 @@ export default function ModuleSyncPanel({
                         </td>
                       </tr>
                     ) : data && data.rows.length > 0 ? (
-                      data.rows.map((r) => (
+                      data.rows.map((r) => {
+                        const noteFor = notesMap[r.key];
+                        const tint = noteFor?.mark
+                          ? (MARK_META[noteFor.mark]?.row ?? "")
+                          : r.attempted
+                            ? "bg-amber-50/40"
+                            : "";
+                        return (
                         <tr
                           key={r.key}
-                          className="transition-colors hover:bg-slate-50/60"
+                          className={`transition-colors hover:bg-slate-50/60 ${tint}`}
                         >
                           <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
                             {r.key}
@@ -383,6 +570,14 @@ export default function ModuleSyncPanel({
                                   {r.satuSehatId}
                                 </span>
                               </span>
+                            ) : r.attempted ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700"
+                                title="Pernah di-POST tapi belum dapat id Satu Sehat"
+                              >
+                                <LuTriangleAlert className="h-3 w-3" />
+                                Dikirim · tanpa ID
+                              </span>
                             ) : r.ready ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
                                 <LuSend className="h-3 w-3" />
@@ -394,6 +589,35 @@ export default function ModuleSyncPanel({
                                 Belum dikirim
                               </span>
                             )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => openNoteEditor(r)}
+                              className="inline-flex max-w-56 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-slate-100"
+                              title="Tamb/ubah catatan"
+                            >
+                              {noteFor && (noteFor.mark || noteFor.note) ? (
+                                <>
+                                  {noteFor.mark && (
+                                    <span
+                                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${MARK_META[noteFor.mark]?.dot ?? "bg-slate-400"}`}
+                                    />
+                                  )}
+                                  <span className="truncate text-xs text-slate-600">
+                                    {noteFor.note ??
+                                      MARK_META[noteFor.mark ?? ""]?.label ??
+                                      "—"}
+                                  </span>
+                                  <LuPencil className="h-3 w-3 shrink-0 text-slate-300" />
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-teal-600">
+                                  <LuStickyNote className="h-3.5 w-3.5" />
+                                  Catat
+                                </span>
+                              )}
+                            </button>
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             {!r.sent && supportsMaster ? (
@@ -418,7 +642,8 @@ export default function ModuleSyncPanel({
                             )}
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     ) : (
                       <tr>
                         <td
@@ -566,6 +791,132 @@ export default function ModuleSyncPanel({
                     Autofill ke form
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal catatan */}
+      {noteKey && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setNoteKey(null)}
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Catatan baris"
+            className="relative flex w-full flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-md sm:rounded-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600">
+                  <LuStickyNote className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800">Catatan</p>
+                  <p className="truncate font-mono text-[11px] text-slate-400">
+                    {data?.keyLabel ?? "Ref"}: {noteKey}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNoteKey(null)}
+                aria-label="Tutup"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <LuX className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-500">
+                  Penanda warna
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNoteMark("")}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      noteMark === ""
+                        ? "border-slate-400 bg-slate-100 text-slate-700"
+                        : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full border border-slate-300 bg-white" />
+                    Tanpa
+                  </button>
+                  {MARK_ORDER.map((m) => {
+                    const meta = MARK_META[m];
+                    const active = noteMark === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setNoteMark(m)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                          active
+                            ? `border-transparent ring-1 ${meta.chip}`
+                            : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} />
+                        {meta.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-500">
+                  Catatan
+                </p>
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  rows={4}
+                  maxLength={2000}
+                  placeholder="mis. NIK salah rekam — pasien sudah ada di Satu Sehat dgn NIK benar; perlu koreksi di pendaftaran."
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 placeholder-slate-300 transition-all focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+                />
+              </div>
+
+              {noteError && (
+                <p className="wrap-break-word text-xs text-red-600">{noteError}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-5 py-3">
+              <button
+                type="button"
+                onClick={() => submitNote(true)}
+                disabled={noteSaving || !notesMap[noteKey]}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+              >
+                <LuTrash2 className="h-3.5 w-3.5" />
+                Hapus
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNoteKey(null)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitNote(false)}
+                  disabled={noteSaving}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-linear-to-r from-teal-600 to-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50"
+                >
+                  {noteSaving ? "Menyimpan…" : "Simpan"}
+                </button>
               </div>
             </div>
           </div>

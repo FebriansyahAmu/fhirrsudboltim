@@ -19,6 +19,15 @@ let memoryCache: CachedToken | null = null;
 
 const BUFFER_SECONDS = 60; // refresh 60 detik sebelum expired
 
+// Single-flight: gabungkan permintaan token yang datang bersamaan menjadi
+// SATU panggilan ke endpoint token (cegah "thundering herd" → 429).
+let tokenInFlight: Promise<string> | null = null;
+
+// Cooldown saat throttled (429): jangan pukul ulang endpoint token sampai
+// jendela ini lewat — mencegah lingkaran throttle yang memperpanjang 429.
+let throttledUntil = 0;
+const DEFAULT_THROTTLE_COOLDOWN_MS = 60_000;
+
 // ─────────────────────────────────────────────
 // Get valid token — ambil token aktif atau refresh otomatis
 // ─────────────────────────────────────────────
@@ -41,25 +50,33 @@ export async function getValidToken(): Promise<string> {
     return stored.token;
   }
 
-  // 3. Fetch token baru dari Satu Sehat
-  const freshToken = await fetchNewToken();
+  // 3. Perlu token baru — hormati cooldown throttle agar tidak memukul ulang.
+  if (Date.now() < throttledUntil) {
+    const waitS = Math.ceil((throttledUntil - Date.now()) / 1000);
+    throw new Error(
+      `Endpoint token Satu Sehat sedang throttled (429). Tunggu ~${waitS} detik lalu coba lagi.`,
+    );
+  }
 
-  // 4. Simpan ke DB (upsert id=1) + update cache
+  // 4. Single-flight: satukan permintaan token yang bersamaan.
+  if (!tokenInFlight) {
+    tokenInFlight = refreshAndStoreToken().finally(() => {
+      tokenInFlight = null;
+    });
+  }
+  return tokenInFlight;
+}
+
+// Fetch token baru → simpan ke DB (upsert id=1) → update memory cache.
+async function refreshAndStoreToken(): Promise<string> {
+  const fresh = await fetchNewToken();
   await prisma.satu_sehat_tokens.upsert({
     where: { id: 1 },
-    create: {
-      id: 1,
-      token: freshToken.token,
-      expires_at: freshToken.expiresAt,
-    },
-    update: {
-      token: freshToken.token,
-      expires_at: freshToken.expiresAt,
-    },
+    create: { id: 1, token: fresh.token, expires_at: fresh.expiresAt },
+    update: { token: fresh.token, expires_at: fresh.expiresAt },
   });
-
-  memoryCache = { token: freshToken.token, expiresAt: freshToken.expiresAt };
-  return freshToken.token;
+  memoryCache = { token: fresh.token, expiresAt: fresh.expiresAt };
+  return fresh.token;
 }
 
 // ─────────────────────────────────────────────
@@ -101,6 +118,21 @@ async function fetchNewToken(): Promise<CachedToken> {
   const text = await response.text();
 
   if (!response.ok) {
+    // 429 throttled → pasang cooldown supaya request berikutnya tidak
+    // langsung memukul endpoint token lagi (memperpanjang throttle).
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const cooldownMs =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : DEFAULT_THROTTLE_COOLDOWN_MS;
+      throttledUntil = Date.now() + cooldownMs;
+      throw new Error(
+        `Endpoint token Satu Sehat throttled (429). Dibatasi rate-limit; tunggu ~${Math.ceil(
+          cooldownMs / 1000,
+        )} detik lalu coba lagi.`,
+      );
+    }
     throw new Error(
       `Gagal fetch token Satu Sehat: ${response.status} — ${text.slice(0, 200)}`,
     );

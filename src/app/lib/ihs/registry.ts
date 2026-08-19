@@ -47,6 +47,15 @@ export interface IhsModuleSpec {
     keyCol: string; // kolom kunci di master (cocok dgn key baris), mis. "NORM"
     nameCol: string; // kolom nama, mis. "NAMA"
   };
+  /**
+   * Deteksi baris "pernah dikirim tapi belum punya id": cocokkan kolom NIK
+   * staging dengan identifier yang pernah di-POST (delivery_logs) untuk
+   * `logResourceType`. Read dari DB kita sendiri.
+   */
+  attemptMatch?: {
+    logResourceType: string; // mis. "Patient"
+    nikCol: string; // kolom NIK di staging, mis. "nik"
+  };
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -73,6 +82,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       keyCol: "NORM",
       nameCol: "NAMA",
     },
+    attemptMatch: { logResourceType: "Patient", nikCol: "nik" },
   },
 };
 

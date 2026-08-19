@@ -45,4 +45,22 @@ model users {
   created_at    DateTime        @default(now())
   updated_at    DateTime        @default(now())
   delivery_logs delivery_logs[]
+  ihs_row_notes ihs_row_notes[]
+}
+
+model ihs_row_notes {
+  id         String   @id @db.Char(36)
+  module     String   @db.VarChar(50)
+  ref_key    String   @db.VarChar(64)
+  nik        String?  @db.VarChar(32)
+  mark       String?  @db.VarChar(20)
+  note       String?  @db.Text
+  created_by String   @db.Char(36)
+  created_at DateTime @default(now()) @db.DateTime(3)
+  updated_at DateTime @updatedAt @db.DateTime(3)
+  users      users    @relation(fields: [created_by], references: [id], map: "fk_ihs_row_notes_user")
+
+  @@unique([module, ref_key], map: "uq_ihs_row_notes_module_ref")
+  @@index([module], map: "idx_ihs_row_notes_module")
+  @@index([mark], map: "idx_ihs_row_notes_mark")
 }

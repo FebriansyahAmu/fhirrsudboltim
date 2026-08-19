@@ -9,14 +9,27 @@ import { getModuleSpec } from "@/app/lib/ihs/registry";
 import {
   getModuleSyncSummary,
   getModuleSyncRows,
+  getNotedSyncRows,
   countForFilter,
   type SyncFilter,
 } from "@/app/lib/ihs/module-sync";
+import {
+  getNotesForKeys,
+  getNoteCounts,
+  listNotedKeys,
+  type NoteFilter,
+} from "@/app/lib/ihs/notes.dal";
 
 const PAGE_SIZE = 10;
 
 function normFilter(v: string | null): SyncFilter {
   return v === "terkirim" || v === "belum" || v === "siap" ? v : "semua";
+}
+
+function normNoteFilter(v: string | null): NoteFilter | "" {
+  if (v === "ada") return "ada";
+  if (v === "merah" || v === "kuning" || v === "hijau" || v === "biru") return v;
+  return "";
 }
 
 export async function GET(
@@ -42,28 +55,68 @@ export async function GET(
 
   const sp = request.nextUrl.searchParams;
   const filter = normFilter(sp.get("filter"));
+  const noteFilter = normNoteFilter(sp.get("note"));
   const requestedPage = Math.max(1, Number.parseInt(sp.get("page") ?? "1", 10) || 1);
 
   try {
-    const summary = await getModuleSyncSummary(spec);
-    const totalRows = countForFilter(summary, filter);
-    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
-    const page = Math.min(requestedPage, totalPages);
-    const rows = await getModuleSyncRows(spec, filter, page, PAGE_SIZE);
+    const [summary, noteCounts] = await Promise.all([
+      getModuleSyncSummary(spec),
+      getNoteCounts(spec.module),
+    ]);
 
-    return NextResponse.json({
+    const base = {
       module: spec.module,
       resourceType: spec.resourceType,
       keyLabel: spec.keyLabel,
       columns: spec.columns.map((c) => ({ label: c.label, type: c.type })),
       createFromMaster: spec.createFromMaster ?? false,
       summary,
+      noteCounts,
       filter,
-      page,
+      noteFilter,
       pageSize: PAGE_SIZE,
+    };
+
+    // ── Mode "bercatatan": listing didorong tabel notes (DB kita) ──
+    if (noteFilter) {
+      const totalRows =
+        noteFilter === "ada" ? noteCounts.total : noteCounts[noteFilter];
+      const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+      const page = Math.min(requestedPage, totalPages);
+      const { keys, notes } = await listNotedKeys(
+        spec.module,
+        noteFilter,
+        page,
+        PAGE_SIZE,
+      );
+      const rows = await getNotedSyncRows(spec, keys);
+      return NextResponse.json({
+        ...base,
+        page,
+        totalRows,
+        totalPages,
+        rows,
+        notes,
+      });
+    }
+
+    // ── Mode normal: listing dari SIMGOS ──
+    const totalRows = countForFilter(summary, filter);
+    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+    const page = Math.min(requestedPage, totalPages);
+    const rows = await getModuleSyncRows(spec, filter, page, PAGE_SIZE);
+    const notes = await getNotesForKeys(
+      spec.module,
+      rows.map((r) => r.key),
+    );
+
+    return NextResponse.json({
+      ...base,
+      page,
       totalRows,
       totalPages,
       rows,
+      notes,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gagal membaca data SIMGOS";

@@ -77,3 +77,30 @@ CREATE TABLE IF NOT EXISTS satu_sehat_tokens (
 
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─────────────────────────────────────────────
+-- Tabel: ihs_row_notes
+-- Anotasi operator (catatan + penanda warna) per baris data SIMGOS,
+-- per modul IHS. Contoh guna: menandai pasien yang sudah dikirim tetapi
+-- tetap tanpa id Satu Sehat (mis. NIK salah / duplicate).
+-- Ini DB kita sendiri (fhir_satusehat) — boleh di-write.
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ihs_row_notes (
+  id         CHAR(36)     NOT NULL,
+  module     VARCHAR(50)  NOT NULL COMMENT 'slug modul IHS, mis. patient',
+  ref_key    VARCHAR(64)  NOT NULL COMMENT 'kunci baris sumber SIMGOS (mis. NORM/refId)',
+  nik        VARCHAR(32)  NULL     COMMENT 'NIK/identitas untuk referensi (opsional)',
+  mark       VARCHAR(20)  NULL     COMMENT 'penanda warna: merah|kuning|hijau|biru',
+  note       TEXT         NULL     COMMENT 'catatan operator',
+  created_by CHAR(36)     NOT NULL COMMENT 'user id pembuat/pengubah',
+  created_at DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_ihs_row_notes_module_ref (module, ref_key),
+  INDEX idx_ihs_row_notes_module (module),
+  INDEX idx_ihs_row_notes_mark (mark),
+  CONSTRAINT fk_ihs_row_notes_user
+    FOREIGN KEY (created_by) REFERENCES users (id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

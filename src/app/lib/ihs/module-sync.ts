@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { simgosQuery } from "@/app/lib/db/simgos";
+import { getAttemptedIdentifiers } from "./notes.dal";
 import type { IhsModuleSpec, SyncCellType } from "./registry";
 
 const SCHEMA = "kemkes-ihs";
@@ -38,6 +39,8 @@ export interface SyncRow {
   key: string;
   sent: boolean;
   ready: boolean;
+  /** Pernah di-POST (delivery_logs) tapi belum punya id Satu Sehat. */
+  attempted: boolean;
   satuSehatId: string | null;
   cells: SyncCell[];
 }
@@ -131,38 +134,38 @@ export async function getModuleSyncSummary(
   };
 }
 
-export async function getModuleSyncRows(
-  spec: IhsModuleSpec,
-  filter: SyncFilter,
-  page = 1,
-  pageSize = 10,
-): Promise<SyncRow[]> {
-  const table = ident(spec.table);
-  const keyCol = ident(spec.keyCol);
-  const orderCol = ident(spec.orderCol);
-
-  const select: string[] = [`\`${keyCol}\` AS _key`, "id AS _id"];
+/** Daftar kolom SELECT (aliased) untuk satu spec. */
+function buildSelect(spec: IhsModuleSpec): string {
+  const select: string[] = [`\`${ident(spec.keyCol)}\` AS _key`, "id AS _id"];
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
+  if (spec.attemptMatch)
+    select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
   spec.columns.forEach((c, i) =>
     select.push(`\`${ident(c.col)}\` AS \`col_${i}\``),
   );
+  return select.join(", ");
+}
 
-  const size = Math.min(Math.max(1, Math.trunc(pageSize)), 100);
-  const offset = (Math.max(1, Math.trunc(page)) - 1) * size;
+/** Peta baris mentah → SyncRow + set flag attempted + isi nama master. */
+async function finalizeRows(
+  spec: IhsModuleSpec,
+  raw: Record<string, unknown>[],
+): Promise<SyncRow[]> {
+  let attempted: Set<string> | null = null;
+  if (spec.attemptMatch) {
+    attempted = await getAttemptedIdentifiers(spec.attemptMatch.logResourceType);
+  }
 
-  const rows = await simgosQuery<Record<string, unknown>>(
-    `SELECT ${select.join(", ")}
-       FROM \`${SCHEMA}\`.\`${table}\`
-       ${whereClause(spec, filter)}
-       ORDER BY \`${orderCol}\` DESC
-       LIMIT ${size} OFFSET ${offset}`,
-  );
-
-  const mapped: SyncRow[] = rows.map((r) => ({
+  const rows: SyncRow[] = raw.map((r) => ({
     key: String(r._key ?? ""),
     sent: r._id != null,
     satuSehatId: r._id != null ? String(r._id) : null,
     ready: spec.readyFlag ? toNum(r._ready) === 1 : false,
+    attempted:
+      attempted != null &&
+      r._id == null &&
+      r._nik != null &&
+      attempted.has(String(r._nik)),
     cells: spec.columns.map((c, i) => ({
       label: c.label,
       type: c.type,
@@ -170,10 +173,59 @@ export async function getModuleSyncRows(
     })),
   }));
 
-  // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask (Satu Sehat).
-  await enrichMasterName(spec, mapped);
+  // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask.
+  await enrichMasterName(spec, rows);
+  return rows;
+}
 
-  return mapped;
+export async function getModuleSyncRows(
+  spec: IhsModuleSpec,
+  filter: SyncFilter,
+  page = 1,
+  pageSize = 10,
+): Promise<SyncRow[]> {
+  const table = ident(spec.table);
+  const orderCol = ident(spec.orderCol);
+
+  const size = Math.min(Math.max(1, Math.trunc(pageSize)), 100);
+  const offset = (Math.max(1, Math.trunc(page)) - 1) * size;
+
+  const raw = await simgosQuery<Record<string, unknown>>(
+    `SELECT ${buildSelect(spec)}
+       FROM \`${SCHEMA}\`.\`${table}\`
+       ${whereClause(spec, filter)}
+       ORDER BY \`${orderCol}\` DESC
+       LIMIT ${size} OFFSET ${offset}`,
+  );
+
+  return finalizeRows(spec, raw);
+}
+
+/**
+ * Ambil baris SIMGOS untuk sekumpulan key (dipakai saat filter "bercatatan").
+ * Urutan hasil mengikuti urutan `keys` (mis. terbaru dulu dari tabel notes).
+ */
+export async function getNotedSyncRows(
+  spec: IhsModuleSpec,
+  keys: string[],
+): Promise<SyncRow[]> {
+  if (keys.length === 0) return [];
+  const table = ident(spec.table);
+  const keyCol = ident(spec.keyCol);
+  const placeholders = keys.map(() => "?").join(", ");
+
+  const raw = await simgosQuery<Record<string, unknown>>(
+    `SELECT ${buildSelect(spec)}
+       FROM \`${SCHEMA}\`.\`${table}\`
+      WHERE \`${keyCol}\` IN (${placeholders})`,
+    keys,
+  );
+
+  const rows = await finalizeRows(spec, raw);
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  return keys
+    .map((k) => byKey.get(k))
+    .filter((r): r is SyncRow => r !== undefined);
 }
 
 /**
