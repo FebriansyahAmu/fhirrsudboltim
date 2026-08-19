@@ -62,12 +62,6 @@ function parseName(raw: unknown): string | null {
   return null;
 }
 
-function maskNik(raw: unknown): string | null {
-  if (typeof raw !== "string" || !raw) return null;
-  if (raw.length < 6) return "••••";
-  return `${raw.slice(0, 4)}${"•".repeat(raw.length - 6)}${raw.slice(-2)}`;
-}
-
 function fmtDate(raw: unknown): string | null {
   if (!raw) return null;
   const d = raw instanceof Date ? raw : new Date(raw as string);
@@ -90,7 +84,8 @@ function formatCell(raw: unknown, type: SyncCellType): string | null {
     case "json-name":
       return parseName(raw);
     case "nik":
-      return maskNik(raw);
+      // Tanpa masking — tampilkan NIK apa adanya.
+      return raw == null ? null : String(raw);
     case "date":
       return fmtDate(raw);
     case "code":
@@ -163,7 +158,7 @@ export async function getModuleSyncRows(
        LIMIT ${size} OFFSET ${offset}`,
   );
 
-  return rows.map((r) => ({
+  const mapped: SyncRow[] = rows.map((r) => ({
     key: String(r._key ?? ""),
     sent: r._id != null,
     satuSehatId: r._id != null ? String(r._id) : null,
@@ -174,6 +169,53 @@ export async function getModuleSyncRows(
       value: formatCell(r[`col_${i}`], c.type),
     })),
   }));
+
+  // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask (Satu Sehat).
+  await enrichMasterName(spec, mapped);
+
+  return mapped;
+}
+
+/**
+ * Ganti nilai kolom bertipe `json-name` dengan nama dari tabel master
+ * (mis. `master.pasien.NAMA`) yang selalu penuh — staging bisa kosong/termask.
+ * Satu kueri batch untuk seluruh baris di halaman. Read-only.
+ */
+async function enrichMasterName(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+): Promise<void> {
+  if (!spec.masterName) return;
+  const nameIdx = spec.columns.findIndex((c) => c.type === "json-name");
+  if (nameIdx < 0) return;
+
+  const uniqueKeys = [
+    ...new Set(rows.map((r) => r.key).filter((k) => /^[0-9]+$/.test(k))),
+  ];
+  if (uniqueKeys.length === 0) return;
+
+  const schema = ident(spec.masterName.schema);
+  const table = ident(spec.masterName.table);
+  const keyCol = ident(spec.masterName.keyCol);
+  const nameCol = ident(spec.masterName.nameCol);
+  const placeholders = uniqueKeys.map(() => "?").join(", ");
+
+  const nameRows = await simgosQuery<Record<string, unknown>>(
+    `SELECT \`${keyCol}\` AS k, \`${nameCol}\` AS nm
+       FROM \`${schema}\`.\`${table}\`
+      WHERE \`${keyCol}\` IN (${placeholders})`,
+    uniqueKeys.map((k) => Number(k)),
+  );
+
+  const nameByKey = new Map<string, string>();
+  for (const nr of nameRows) {
+    if (nr.k != null && nr.nm != null) nameByKey.set(String(nr.k), String(nr.nm));
+  }
+
+  for (const r of rows) {
+    const nm = nameByKey.get(r.key);
+    if (nm) r.cells[nameIdx] = { ...r.cells[nameIdx], value: nm };
+  }
 }
 
 export function countForFilter(s: SyncSummary, f: SyncFilter): number {

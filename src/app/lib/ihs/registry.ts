@@ -36,6 +36,17 @@ export interface IhsModuleSpec {
    * Dipakai untuk alur "POST manual". Assembler-nya modul-spesifik.
    */
   createFromMaster?: boolean;
+  /**
+   * Sumber "Nama" cadangan dari tabel master, untuk mengisi kolom bertipe
+   * `json-name` yang kosong pada baris skeleton (belum terkirim). Di-JOIN
+   * lewat `keyCol` = kunci baris (mis. NORM). Read-only.
+   */
+  masterName?: {
+    schema: string; // mis. "master"
+    table: string; // mis. "pasien"
+    keyCol: string; // kolom kunci di master (cocok dgn key baris), mis. "NORM"
+    nameCol: string; // kolom nama, mis. "NAMA"
+  };
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -56,6 +67,12 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     boolCols: ["active", "deceasedBoolean"],
     payloadExclude: ["multipleBirthBoolean", "multipleBirthInteger"],
     createFromMaster: true,
+    masterName: {
+      schema: "master",
+      table: "pasien",
+      keyCol: "NORM",
+      nameCol: "NAMA",
+    },
   },
 };
 

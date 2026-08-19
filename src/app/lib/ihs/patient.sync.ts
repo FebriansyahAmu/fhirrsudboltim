@@ -87,11 +87,11 @@ export async function getPatientSyncRows(
 ): Promise<PatientSyncRow[]> {
   const where =
     filter === "terkirim"
-      ? "WHERE id IS NOT NULL"
+      ? "WHERE p.id IS NOT NULL"
       : filter === "belum"
-        ? "WHERE id IS NULL"
+        ? "WHERE p.id IS NULL"
         : filter === "siap"
-          ? "WHERE id IS NULL AND statusRequest = 1"
+          ? "WHERE p.id IS NULL AND p.statusRequest = 1"
           : "";
 
   // page & pageSize di-clamp ke integer aman (bukan dari input mentah)
@@ -99,17 +99,20 @@ export async function getPatientSyncRows(
   const safePage = Math.max(1, Math.trunc(page));
   const offset = (safePage - 1) * safeSize;
 
+  // Nama diutamakan dari master.pasien (penuh); staging bisa kosong/termask (Satu Sehat).
   const rows = await simgosQuery<Record<string, unknown>>(
-    `SELECT refId, nik, id, statusRequest, httpRequest, name, getDate
-       FROM \`kemkes-ihs\`.patient
+    `SELECT p.refId, p.nik, p.id, p.statusRequest, p.httpRequest, p.name, p.getDate,
+            m.NAMA AS masterNama
+       FROM \`kemkes-ihs\`.patient p
+       LEFT JOIN \`master\`.pasien m ON m.NORM = p.refId
        ${where}
-       ORDER BY getDate DESC
+       ORDER BY p.getDate DESC
        LIMIT ${safeSize} OFFSET ${offset}`,
   );
 
   return rows.map((r) => ({
     refId: String(r.refId ?? ""),
-    nama: parseName(r.name),
+    nama: r.masterNama != null ? String(r.masterNama) : parseName(r.name),
     nik: r.nik ? String(r.nik) : null,
     satuSehatId: r.id ? String(r.id) : null,
     terkirim: r.id != null,
