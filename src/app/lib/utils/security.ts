@@ -34,6 +34,7 @@ const CLIENT_ALLOWED_RESOURCES = new Set([
   "Questionnaire",
   "QuestionnaireResponse",
   "ServiceRequest",
+  "Specimen",
 ]);
 
 export function buildSafeApiUrl(

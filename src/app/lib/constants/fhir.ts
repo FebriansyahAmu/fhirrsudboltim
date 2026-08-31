@@ -17,6 +17,7 @@ export const ALLOWED_RESOURCES = new Set([
   "Questionnaire",
   "QuestionnaireResponse",
   "ServiceRequest",
+  "Specimen",
 ]);
 
 const MAX_PAYLOAD_SIZE = 1_048_576; // 1 MB

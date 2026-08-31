@@ -23,6 +23,7 @@ import {
   LuImages,
   LuRadioTower,
   LuFilePenLine,
+  LuTestTube,
 } from "react-icons/lu";
 
 export const FHIR_MODULES: ModuleInfo[] = [
@@ -162,6 +163,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     path: "/service-request",
     icon: LuClipboardPlus,
     desc: "Permintaan pemeriksaan radiologi",
+    group: "Klinis",
+    methods: ["POST", "GET", "PUT", "PATCH"],
+    badge: "Active",
+  },
+  {
+    name: "Specimen",
+    path: "/specimen",
+    icon: LuTestTube,
+    desc: "Spesimen laboratorium pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",

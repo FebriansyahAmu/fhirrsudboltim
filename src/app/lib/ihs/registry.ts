@@ -266,6 +266,30 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     ],
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
+
+  // Specimen — harus terkait ServiceRequest yang SUDAH terkirim (punya id).
+  // request = [{ reference: "ServiceRequest/<id>" }]; kosong ⇒ "Menunggu ServiceRequest".
+  specimen: {
+    module: "specimen",
+    resourceType: "Specimen",
+    table: "specimen",
+    keyCol: "refId",
+    keyLabel: "No. Spesimen",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "type", label: "Jenis", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "receivedTime", label: "Diterima", type: "date" },
+    ],
+    dependsOn: {
+      refCol: "request",
+      refPath: "$[0].reference",
+      label: "ServiceRequest",
+    },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

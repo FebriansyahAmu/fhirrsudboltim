@@ -16,7 +16,8 @@ export type FhirResourceType =
   | "EpisodeOfCare"
   | "DiagnosticReport"
   | "QuestionnaireResponse"
-  | "ServiceRequest";
+  | "ServiceRequest"
+  | "Specimen";
 
 //CarePlan types
 export type CarePlanStatus =
@@ -166,6 +167,8 @@ export interface FhirIdentifier {
   /** Tipe identifier — digunakan untuk ACSN, MR, dll. */
   type?: { coding: Array<{ system: string; code: string }> };
   value: string;
+  /** Penerbit identifier (mis. Organization) — dipakai Specimen. */
+  assigner?: FhirReference;
 }
 
 export interface AllergyIntolerancePayload {
@@ -192,6 +195,42 @@ export interface AllergyIntolerancePayload {
    */
   recordedDate?: string;
   recorder?: FhirReference;
+}
+
+// ─────────────────────────────────────────────
+// Specimen
+// Ref: https://www.hl7.org/fhir/specimen.html
+// ─────────────────────────────────────────────
+
+export type SpecimenStatus =
+  | "available"
+  | "unavailable"
+  | "unsatisfactory"
+  | "entered-in-error";
+
+export interface SpecimenCollection {
+  collectedDateTime?: string;
+  method?: FhirCodeableConcept;
+  /** Ekstensi (mis. CollectorOrganization). */
+  extension?: unknown[];
+}
+
+export interface SpecimenPayload {
+  resourceType: "Specimen";
+  id?: string;
+  /**
+   * Identifier lokal fasilitas: system "http://sys-ids.kemkes.go.id/specimen/{ORG_ID}".
+   */
+  identifier?: FhirIdentifier[];
+  status: SpecimenStatus;
+  type: FhirCodeableConcept;
+  subject: FhirReference;
+  /** Referensi ServiceRequest — spesimen harus terkait permintaan yang terkirim. */
+  request?: FhirReference[];
+  receivedTime?: string;
+  collection?: SpecimenCollection;
+  /** Ekstensi tingkat resource (mis. TransportedTime). */
+  extension?: unknown[];
 }
 
 // ─────────────────────────────────────────────
