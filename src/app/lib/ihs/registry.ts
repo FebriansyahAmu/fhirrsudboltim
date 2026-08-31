@@ -290,6 +290,129 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       label: "ServiceRequest",
     },
   },
+
+  // ── Condition: satu resource, beberapa jenis (tabel berbeda) ──
+  // Semua butuh encounter.reference untuk dikirim → dependsOn Encounter.
+
+  // Diagnosis kunjungan — tabel utama.
+  condition: {
+    module: "condition",
+    resourceType: "Condition",
+    table: "condition",
+    keyCol: "refId",
+    keyLabel: "No. Diagnosis",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Diagnosis", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "code", label: "Kode", type: "code", jsonPath: "$.coding[0].code" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Anamnesis (riwayat keluhan).
+  "condition-anamnesis": {
+    module: "condition-anamnesis",
+    resourceType: "Condition",
+    table: "condition_anamnesis",
+    keyCol: "refId",
+    keyLabel: "No. Diagnosis",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Kondisi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "recordedDate", label: "Direkam", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Riwayat penyakit dahulu.
+  "condition-riwayat": {
+    module: "condition-riwayat",
+    resourceType: "Condition",
+    table: "condition_riwayat_penyakit_dahulu",
+    keyCol: "refId",
+    keyLabel: "No. Diagnosis",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Kondisi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "recordedDate", label: "Direkam", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Hasil Patologi Anatomi.
+  "condition-hasil-pa": {
+    module: "condition-hasil-pa",
+    resourceType: "Condition",
+    table: "condition_hasil_pa",
+    keyCol: "refId",
+    keyLabel: "No. Diagnosis",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Kondisi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "recordedDate", label: "Direkam", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian Tumor (staging).
+  "condition-penilaian-tumor": {
+    module: "condition-penilaian-tumor",
+    resourceType: "Condition",
+    table: "condition_penilaian_tumor",
+    keyCol: "refId",
+    keyLabel: "No. Diagnosis",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Kondisi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "recordedDate", label: "Direkam", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

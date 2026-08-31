@@ -198,6 +198,31 @@ export interface AllergyIntolerancePayload {
 }
 
 // ─────────────────────────────────────────────
+// Condition
+// Ref: https://www.hl7.org/fhir/condition.html
+// ─────────────────────────────────────────────
+
+export type ConditionClinicalStatus =
+  | "active"
+  | "recurrence"
+  | "relapse"
+  | "inactive"
+  | "remission"
+  | "resolved";
+
+export interface ConditionPayload {
+  resourceType: "Condition";
+  id?: string;
+  clinicalStatus: { coding: FhirCoding[] };
+  verificationStatus?: { coding: FhirCoding[] };
+  category?: { coding: FhirCoding[] }[];
+  code: FhirCodeableConcept;
+  subject: FhirReference;
+  encounter?: FhirReference;
+  recordedDate?: string;
+}
+
+// ─────────────────────────────────────────────
 // Specimen
 // Ref: https://www.hl7.org/fhir/specimen.html
 // ─────────────────────────────────────────────

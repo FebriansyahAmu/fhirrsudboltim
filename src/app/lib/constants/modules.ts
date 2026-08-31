@@ -51,9 +51,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
     icon: LuActivity,
     desc: "Kondisi & diagnosis",
     group: "Klinis",
-    methods: ["POST", "GET", "PUT"],
+    methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
-    hasPage: false,
   },
   {
     name: "Observation",
