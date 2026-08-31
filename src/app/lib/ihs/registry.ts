@@ -77,6 +77,17 @@ export interface IhsModuleSpec {
     kind: "yymmdd-prefix";
     keyLength: number; // total panjang keyCol (mis. 10) untuk padding range
   };
+  /**
+   * Ketergantungan referensi: resource ini butuh resource lain terkirim dulu.
+   * Bila baris belum terkirim DAN referensinya belum terbentuk (mis.
+   * encounter.subject.reference = `Patient/<id>` belum ada), tampilkan notice
+   * "Menunggu <label>". Deteksi via JSON_EXTRACT server-side.
+   */
+  dependsOn?: {
+    refCol: string; // kolom JSON pemegang referensi, mis. "subject"
+    refPath: string; // path ke reference, mis. "$.reference"
+    label: string; // nama resource dependensi, mis. "Patient"
+  };
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -124,6 +135,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "sendDate", label: "Diproses", type: "date" },
     ],
     dateKey: { kind: "yymmdd-prefix", keyLength: 10 },
+    dependsOn: { refCol: "subject", refPath: "$.reference", label: "Patient" },
   },
 };
 

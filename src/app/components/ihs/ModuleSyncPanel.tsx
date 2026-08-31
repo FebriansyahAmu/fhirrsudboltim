@@ -21,6 +21,7 @@ import {
   LuStickyNote,
   LuPencil,
   LuTrash2,
+  LuUserRoundX,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -35,6 +36,7 @@ interface Row {
   sent: boolean;
   ready: boolean;
   attempted: boolean;
+  waitingRef: boolean;
   satuSehatId: string | null;
   cells: Cell[];
 }
@@ -49,13 +51,20 @@ interface NoteCounts {
 interface SyncResponse {
   keyLabel: string;
   columns: { label: string; type: string }[];
-  summary: { total: number; terkirim: number; belum: number; siap: number };
+  summary: {
+    total: number;
+    terkirim: number;
+    belum: number;
+    siap: number;
+    menunggu: number;
+  };
   filter: SyncFilter;
   page: number;
   totalRows: number;
   totalPages: number;
   rows: Row[];
   createFromMaster?: boolean;
+  dependsOnLabel?: string | null;
   notes?: Record<string, RowNoteApi>;
   noteCounts?: NoteCounts;
   noteFilter?: string;
@@ -279,6 +288,7 @@ export default function ModuleSyncPanel({
   const colCount = (data?.columns.length ?? 4) + 4;
   const supportsMaster = data?.createFromMaster ?? false;
   const supportsDate = data?.supportsDate ?? false;
+  const dependsOnLabel = data?.dependsOnLabel ?? null;
   const noteCounts = data?.noteCounts;
 
   const payloadJson = payloadData
@@ -389,6 +399,12 @@ export default function ModuleSyncPanel({
                 <LuClock className="h-3.5 w-3.5" />
                 {fmt(summary.belum)} belum
               </span>
+              {summary.menunggu > 0 && (
+                <span className="inline-flex items-center gap-1 text-orange-600">
+                  <LuUserRoundX className="h-3.5 w-3.5" />
+                  {fmt(summary.menunggu)} menunggu {dependsOnLabel ?? "ref"}
+                </span>
+              )}
               <span className="text-slate-300">·</span>
               <span>{fmt(summary.total)} total</span>
             </p>
@@ -568,9 +584,11 @@ export default function ModuleSyncPanel({
                         const noteFor = notesMap[r.key];
                         const tint = noteFor?.mark
                           ? (MARK_META[noteFor.mark]?.row ?? "")
-                          : r.attempted
-                            ? "bg-amber-50/40"
-                            : "";
+                          : r.waitingRef
+                            ? "bg-orange-50/50"
+                            : r.attempted
+                              ? "bg-amber-50/40"
+                              : "";
                         return (
                         <tr
                           key={r.key}
@@ -602,6 +620,14 @@ export default function ModuleSyncPanel({
                                 >
                                   {r.satuSehatId}
                                 </span>
+                              </span>
+                            ) : r.waitingRef ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700"
+                                title={`Belum bisa dikirim: ${dependsOnLabel ?? "referensi"} belum ada di Satu Sehat`}
+                              >
+                                <LuUserRoundX className="h-3 w-3" />
+                                Menunggu {dependsOnLabel ?? "referensi"}
                               </span>
                             ) : r.attempted ? (
                               <span

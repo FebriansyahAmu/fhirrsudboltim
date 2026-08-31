@@ -88,6 +88,7 @@ export async function GET(
       keyLabel: spec.keyLabel,
       columns: spec.columns.map((c) => ({ label: c.label, type: c.type })),
       createFromMaster: spec.createFromMaster ?? false,
+      dependsOnLabel: spec.dependsOn?.label ?? null,
       supportsDate,
       dateFrom: range?.from ?? null,
       dateTo: range?.to ?? null,

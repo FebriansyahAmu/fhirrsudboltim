@@ -27,6 +27,8 @@ export interface SyncSummary {
   terkirim: number;
   belum: number;
   siap: number;
+  /** Belum terkirim karena referensi dependensi belum ada (mis. Patient). */
+  menunggu: number;
 }
 
 export interface SyncCell {
@@ -41,6 +43,8 @@ export interface SyncRow {
   ready: boolean;
   /** Pernah di-POST (delivery_logs) tapi belum punya id Satu Sehat. */
   attempted: boolean;
+  /** Belum terkirim karena referensi dependensi belum ada (mis. Patient). */
+  waitingRef: boolean;
   satuSehatId: string | null;
   cells: SyncCell[];
 }
@@ -190,6 +194,9 @@ export async function getModuleSyncSummary(
   const readySql = spec.readyFlag
     ? `SUM(id IS NULL AND \`${ident(spec.readyFlag)}\` = 1)`
     : "0";
+  const menungguSql = spec.dependsOn
+    ? `SUM(id IS NULL AND (\`${ident(spec.dependsOn.refCol)}\` IS NULL OR JSON_EXTRACT(\`${ident(spec.dependsOn.refCol)}\`, '${identPath(spec.dependsOn.refPath)}') IS NULL))`
+    : "0";
 
   // Summary hanya di-scope oleh range tanggal (bukan filter status kirim).
   const { sql, params } = buildWhere(spec, "semua", range);
@@ -199,7 +206,8 @@ export async function getModuleSyncSummary(
        COUNT(*)            AS total,
        SUM(id IS NOT NULL) AS terkirim,
        SUM(id IS NULL)     AS belum,
-       ${readySql}         AS siap
+       ${readySql}         AS siap,
+       ${menungguSql}      AS menunggu
      FROM \`${SCHEMA}\`.\`${table}\`
      ${sql}`,
     params,
@@ -210,6 +218,7 @@ export async function getModuleSyncSummary(
     terkirim: toNum(r.terkirim),
     belum: toNum(r.belum),
     siap: toNum(r.siap),
+    menunggu: toNum(r.menunggu),
   };
 }
 
@@ -227,6 +236,10 @@ function buildSelect(spec: IhsModuleSpec): string {
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
+  if (spec.dependsOn)
+    select.push(
+      `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(spec.dependsOn.refCol)}\`, '${identPath(spec.dependsOn.refPath)}')) AS _depref`,
+    );
   spec.columns.forEach((c, i) => {
     if (c.jsonPath) {
       // Ekstrak skalar dari kolom JSON server-side → transfer ringan.
@@ -260,6 +273,10 @@ async function finalizeRows(
       r._id == null &&
       r._nik != null &&
       attempted.has(String(r._nik)),
+    waitingRef:
+      spec.dependsOn != null &&
+      r._id == null &&
+      (r._depref == null || r._depref === ""),
     cells: spec.columns.map((c, i) => ({
       label: c.label,
       type: c.type,
