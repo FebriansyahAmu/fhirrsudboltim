@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import DateRangePicker from "./DateRangePicker";
 import {
   LuChevronDown,
@@ -22,6 +23,7 @@ import {
   LuPencil,
   LuTrash2,
   LuUserRoundX,
+  LuLayoutList,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -65,6 +67,7 @@ interface SyncResponse {
   rows: Row[];
   createFromMaster?: boolean;
   dependsOnLabel?: string | null;
+  detailBase?: string | null;
   notes?: Record<string, RowNoteApi>;
   noteCounts?: NoteCounts;
   noteFilter?: string;
@@ -289,6 +292,7 @@ export default function ModuleSyncPanel({
   const supportsMaster = data?.createFromMaster ?? false;
   const supportsDate = data?.supportsDate ?? false;
   const dependsOnLabel = data?.dependsOnLabel ?? null;
+  const detailBase = data?.detailBase ?? null;
   const noteCounts = data?.noteCounts;
 
   const payloadJson = payloadData
@@ -678,27 +682,39 @@ export default function ModuleSyncPanel({
                               )}
                             </button>
                           </td>
-                          <td className="px-4 py-2.5 text-right">
-                            {!r.sent && supportsMaster ? (
-                              <button
-                                type="button"
-                                onClick={() => openPayload(r.key, "master")}
-                                title="Rakit payload dari data master & isikan ke form"
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
-                              >
-                                <LuWandSparkles className="h-3.5 w-3.5" />
-                                Salin ke form
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openPayload(r.key, "staging")}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
-                              >
-                                <LuCode className="h-3.5 w-3.5" />
-                                Payload
-                              </button>
-                            )}
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {detailBase && (
+                                <Link
+                                  href={`${detailBase}/${encodeURIComponent(r.key)}`}
+                                  title="Lihat rincian resource klinis pada kunjungan ini"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+                                >
+                                  <LuLayoutList className="h-3.5 w-3.5" />
+                                  Detail
+                                </Link>
+                              )}
+                              {!r.sent && supportsMaster ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openPayload(r.key, "master")}
+                                  title="Rakit payload dari data master & isikan ke form"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+                                >
+                                  <LuWandSparkles className="h-3.5 w-3.5" />
+                                  Salin ke form
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openPayload(r.key, "staging")}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                                >
+                                  <LuCode className="h-3.5 w-3.5" />
+                                  Payload
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                         );

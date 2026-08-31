@@ -88,6 +88,12 @@ export interface IhsModuleSpec {
     refPath: string; // path ke reference, mis. "$.reference"
     label: string; // nama resource dependensi, mis. "Patient"
   };
+  /**
+   * Bila diisi, tiap baris menampilkan tombol "Detail" yang menuju
+   * `${detailBase}/${key}` — halaman rincian resource (mis. encounter →
+   * kumpulan Condition/Observation/Procedure/… berdasar No. Pendaftaran).
+   */
+  detailBase?: string;
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -136,6 +142,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     ],
     dateKey: { kind: "yymmdd-prefix", keyLength: 10 },
     dependsOn: { refCol: "subject", refPath: "$.reference", label: "Patient" },
+    detailBase: "/encounter",
   },
 };
 
