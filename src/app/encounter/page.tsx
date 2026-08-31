@@ -17,6 +17,7 @@ import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import EncounterForm from "@/app/components/modules/encounter/EncounterForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { EncounterPayload } from "@/app/lib/types/fhir";
@@ -131,6 +132,9 @@ export default function EncounterPage() {
             Development
           </span>
         </div>
+
+        {/* ── SIMGOS: status kirim (collapsible, read-only, filter tanggal) ── */}
+        <ModuleSyncPanel module="encounter" title="Data Encounter di SIMGOS" />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs

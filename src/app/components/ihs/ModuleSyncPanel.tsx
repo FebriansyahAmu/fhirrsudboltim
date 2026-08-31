@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import DateRangePicker from "./DateRangePicker";
 import {
   LuChevronDown,
   LuDatabase,
@@ -58,6 +59,9 @@ interface SyncResponse {
   notes?: Record<string, RowNoteApi>;
   noteCounts?: NoteCounts;
   noteFilter?: string;
+  supportsDate?: boolean;
+  dateFrom?: string | null;
+  dateTo?: string | null;
 }
 interface PayloadResponse {
   resourceType: string;
@@ -140,6 +144,8 @@ export default function ModuleSyncPanel({
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
   const [noteFilter, setNoteFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo, setDateTo] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SyncResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -163,13 +169,22 @@ export default function ModuleSyncPanel({
   const [noteError, setNoteError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (f: SyncFilter, p: number, nf: string, signal?: AbortSignal) => {
+    async (
+      f: SyncFilter,
+      p: number,
+      nf: string,
+      df: string | null,
+      dt: string | null,
+      signal?: AbortSignal,
+    ) => {
       setLoading(true);
       setError(null);
       try {
         const noteQs = nf ? `&note=${nf}` : "";
+        const dateQs =
+          (df ? `&from=${df}` : "") + (dt ? `&to=${dt}` : "");
         const res = await fetch(
-          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}`,
+          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}`,
           { credentials: "same-origin", signal },
         );
         const json = await res.json();
@@ -188,9 +203,9 @@ export default function ModuleSyncPanel({
 
   useEffect(() => {
     const ctrl = new AbortController();
-    load(filter, page, noteFilter, ctrl.signal);
+    load(filter, page, noteFilter, dateFrom, dateTo, ctrl.signal);
     return () => ctrl.abort();
-  }, [filter, page, noteFilter, load]);
+  }, [filter, page, noteFilter, dateFrom, dateTo, load]);
 
   const openPayload = useCallback(
     async (key: string, source: PayloadSource = "staging") => {
@@ -240,6 +255,12 @@ export default function ModuleSyncPanel({
     setPage(1);
   };
 
+  const changeDate = (f: string | null, t: string | null) => {
+    setDateFrom(f);
+    setDateTo(t);
+    setPage(1);
+  };
+
   const summary = data?.summary;
   const rangeStart =
     data && data.totalRows > 0 ? (data.page - 1) * PAGE_SIZE + 1 : 0;
@@ -257,6 +278,7 @@ export default function ModuleSyncPanel({
 
   const colCount = (data?.columns.length ?? 4) + 4;
   const supportsMaster = data?.createFromMaster ?? false;
+  const supportsDate = data?.supportsDate ?? false;
   const noteCounts = data?.noteCounts;
 
   const payloadJson = payloadData
@@ -398,7 +420,7 @@ export default function ModuleSyncPanel({
                 </p>
                 <button
                   type="button"
-                  onClick={() => load(filter, page, noteFilter)}
+                  onClick={() => load(filter, page, noteFilter, dateFrom, dateTo)}
                   className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-red-200 transition-colors hover:bg-red-100"
                 >
                   <LuRefreshCw className="h-3.5 w-3.5" />
@@ -438,17 +460,28 @@ export default function ModuleSyncPanel({
                     );
                   })}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => load(filter, page, noteFilter)}
-                  disabled={loading}
-                  className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <LuRefreshCw
-                    className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-                  />
-                  Muat ulang
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {supportsDate && (
+                    <DateRangePicker
+                      from={dateFrom}
+                      to={dateTo}
+                      onChange={changeDate}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      load(filter, page, noteFilter, dateFrom, dateTo)
+                    }
+                    disabled={loading}
+                    className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    <LuRefreshCw
+                      className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+                    />
+                    Muat ulang
+                  </button>
+                </div>
               </div>
 
               {/* Filter catatan (warna) */}

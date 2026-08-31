@@ -82,6 +82,23 @@ function fmtDate(raw: unknown): string | null {
   }
 }
 
+function fmtDateTime(raw: unknown): string | null {
+  if (raw == null || raw === "") return null;
+  const d = raw instanceof Date ? raw : new Date(String(raw));
+  if (isNaN(d.getTime())) return String(raw);
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toISOString();
+  }
+}
+
 function formatCell(raw: unknown, type: SyncCellType): string | null {
   switch (type) {
     case "json-name":
@@ -91,6 +108,8 @@ function formatCell(raw: unknown, type: SyncCellType): string | null {
       return raw == null ? null : String(raw);
     case "date":
       return fmtDate(raw);
+    case "datetime":
+      return fmtDateTime(raw);
     case "code":
     case "text":
     default:
@@ -98,24 +117,82 @@ function formatCell(raw: unknown, type: SyncCellType): string | null {
   }
 }
 
-function whereClause(spec: IhsModuleSpec, filter: SyncFilter): string {
-  if (filter === "terkirim") return "WHERE id IS NOT NULL";
-  if (filter === "belum") return "WHERE id IS NULL";
-  if (filter === "siap" && spec.readyFlag) {
-    return `WHERE id IS NULL AND \`${ident(spec.readyFlag)}\` = 1`;
+/** Rentang tanggal (YYYY-MM-DD). */
+export interface DateRange {
+  from?: string;
+  to?: string;
+}
+
+/** YYYY-MM-DD → prefix YYMMDD; null bila format salah. */
+function toYymmdd(d: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  return m ? m[1].slice(2) + m[2] + m[3] : null;
+}
+
+/** Kondisi range pada keyCol berdasarkan encoding tanggal (yymmdd-prefix). */
+function keyDateConds(
+  spec: IhsModuleSpec,
+  range: DateRange | undefined,
+): { conds: string[]; params: string[] } {
+  const out = { conds: [] as string[], params: [] as string[] };
+  if (!spec.dateKey || spec.dateKey.kind !== "yymmdd-prefix" || !range) {
+    return out;
   }
-  return "";
+  const keyCol = ident(spec.keyCol);
+  const pad = Math.max(0, spec.dateKey.keyLength - 6);
+  if (range.from) {
+    const p = toYymmdd(range.from);
+    if (p) {
+      out.conds.push(`\`${keyCol}\` >= ?`);
+      out.params.push(p + "0".repeat(pad));
+    }
+  }
+  if (range.to) {
+    const p = toYymmdd(range.to);
+    if (p) {
+      out.conds.push(`\`${keyCol}\` <= ?`);
+      out.params.push(p + "9".repeat(pad));
+    }
+  }
+  return out;
+}
+
+/** Bangun WHERE (filter status kirim + range tanggal) beserta paramnya. */
+function buildWhere(
+  spec: IhsModuleSpec,
+  filter: SyncFilter,
+  range?: DateRange,
+): { sql: string; params: unknown[] } {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter === "terkirim") conds.push("id IS NOT NULL");
+  else if (filter === "belum") conds.push("id IS NULL");
+  else if (filter === "siap" && spec.readyFlag) {
+    conds.push("id IS NULL");
+    conds.push(`\`${ident(spec.readyFlag)}\` = 1`);
+  }
+
+  const dk = keyDateConds(spec, range);
+  conds.push(...dk.conds);
+  params.push(...dk.params);
+
+  return { sql: conds.length ? `WHERE ${conds.join(" AND ")}` : "", params };
 }
 
 // ── Queries ────────────────────────────────────────────────
 
 export async function getModuleSyncSummary(
   spec: IhsModuleSpec,
+  range?: DateRange,
 ): Promise<SyncSummary> {
   const table = ident(spec.table);
   const readySql = spec.readyFlag
     ? `SUM(id IS NULL AND \`${ident(spec.readyFlag)}\` = 1)`
     : "0";
+
+  // Summary hanya di-scope oleh range tanggal (bukan filter status kirim).
+  const { sql, params } = buildWhere(spec, "semua", range);
 
   const rows = await simgosQuery<Record<string, unknown>>(
     `SELECT
@@ -123,7 +200,9 @@ export async function getModuleSyncSummary(
        SUM(id IS NOT NULL) AS terkirim,
        SUM(id IS NULL)     AS belum,
        ${readySql}         AS siap
-     FROM \`${SCHEMA}\`.\`${table}\``,
+     FROM \`${SCHEMA}\`.\`${table}\`
+     ${sql}`,
+    params,
   );
   const r = rows[0] ?? {};
   return {
@@ -134,15 +213,30 @@ export async function getModuleSyncSummary(
   };
 }
 
+/** Validasi JSON path (registry tepercaya, tapi tetap dijaga). */
+function identPath(p: string): string {
+  if (!/^\$[A-Za-z0-9_.[\]']*$/.test(p)) {
+    throw new Error(`JSON path tidak valid: ${p}`);
+  }
+  return p;
+}
+
 /** Daftar kolom SELECT (aliased) untuk satu spec. */
 function buildSelect(spec: IhsModuleSpec): string {
   const select: string[] = [`\`${ident(spec.keyCol)}\` AS _key`, "id AS _id"];
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
-  spec.columns.forEach((c, i) =>
-    select.push(`\`${ident(c.col)}\` AS \`col_${i}\``),
-  );
+  spec.columns.forEach((c, i) => {
+    if (c.jsonPath) {
+      // Ekstrak skalar dari kolom JSON server-side → transfer ringan.
+      select.push(
+        `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(c.col)}\`, '${identPath(c.jsonPath)}')) AS \`col_${i}\``,
+      );
+    } else {
+      select.push(`\`${ident(c.col)}\` AS \`col_${i}\``);
+    }
+  });
   return select.join(", ");
 }
 
@@ -183,6 +277,7 @@ export async function getModuleSyncRows(
   filter: SyncFilter,
   page = 1,
   pageSize = 10,
+  range?: DateRange,
 ): Promise<SyncRow[]> {
   const table = ident(spec.table);
   const orderCol = ident(spec.orderCol);
@@ -190,12 +285,15 @@ export async function getModuleSyncRows(
   const size = Math.min(Math.max(1, Math.trunc(pageSize)), 100);
   const offset = (Math.max(1, Math.trunc(page)) - 1) * size;
 
+  const { sql, params } = buildWhere(spec, filter, range);
+
   const raw = await simgosQuery<Record<string, unknown>>(
     `SELECT ${buildSelect(spec)}
        FROM \`${SCHEMA}\`.\`${table}\`
-       ${whereClause(spec, filter)}
+       ${sql}
        ORDER BY \`${orderCol}\` DESC
        LIMIT ${size} OFFSET ${offset}`,
+    params,
   );
 
   return finalizeRows(spec, raw);
