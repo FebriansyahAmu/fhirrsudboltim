@@ -19,7 +19,7 @@
 
 import { useForm, type Resolver } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   allergyIntoleranceFormSchema,
@@ -38,6 +38,12 @@ import { safeJsonParse, safeJsonStringify } from "@/app/lib/utils/security";
 // Props
 // ─────────────────────────────────────────────
 
+/** Payload autofill dari panel SIMGOS (nonce memicu ulang meski JSON sama). */
+interface AutofillRaw {
+  json: string;
+  nonce: number;
+}
+
 interface AllergyIntoleranceFormProps {
   method: HttpMethod;
   loading: boolean;
@@ -46,6 +52,7 @@ interface AllergyIntoleranceFormProps {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => void;
+  autofillRaw?: AutofillRaw | null;
 }
 
 // ─────────────────────────────────────────────
@@ -313,6 +320,7 @@ function MutationForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: {
   method: HttpMethod;
   loading: boolean;
@@ -320,10 +328,21 @@ function MutationForm({
     payload: AllergyIntolerancePayload;
     resourceId?: string;
   }) => void;
+  autofillRaw?: AutofillRaw | null;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+
+  // Autofill dari panel SIMGOS → buka mode Raw JSON + isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   /** PUT dan PATCH membutuhkan ID resource yang sudah ada */
   const needsId = method === "PUT" || method === "PATCH";
@@ -885,6 +904,7 @@ export default function AllergyIntoleranceForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: AllergyIntoleranceFormProps) {
   if (method === "GET") {
     return (
@@ -897,6 +917,7 @@ export default function AllergyIntoleranceForm({
       method={method}
       loading={loading}
       onSubmit={(params) => onSubmit(params)}
+      autofillRaw={autofillRaw}
     />
   );
 }

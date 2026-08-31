@@ -16,13 +16,14 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import DashboardLayout from "@/app/components/layout/DashboardLayout";
 import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import AllergyIntoleranceForm from "@/app/components/modules/allergy-intolerance/AllergyIntoleranceForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { AllergyIntolerancePayload } from "@/app/lib/types/fhir";
@@ -88,6 +89,11 @@ const AVAILABLE_METHODS: HttpMethod[] = ["POST", "GET", "PUT", "PATCH"];
 
 export default function AllergyIntolerancePage() {
   const [activeMethod, setActiveMethod] = useState<HttpMethod>("POST");
+  const [autofillRaw, setAutofillRaw] = useState<{
+    json: string;
+    nonce: number;
+  } | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   /**
    * useApiRequest mengelola state loading/response dan
@@ -102,6 +108,17 @@ export default function AllergyIntolerancePage() {
   const handleMethodChange = (method: HttpMethod) => {
     setActiveMethod(method);
     resetResponse();
+  };
+
+  // Autofill payload dari panel SIMGOS → mode POST + Raw JSON, lalu scroll ke form.
+  const handleUsePayload = (payload: unknown) => {
+    setActiveMethod("POST");
+    resetResponse();
+    setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
+    setTimeout(
+      () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      60,
+    );
   };
 
   /**
@@ -163,6 +180,13 @@ export default function AllergyIntolerancePage() {
           </span>
         </div>
 
+        {/* ── SIMGOS: status kirim (read-only) — highlight "Menunggu Encounter" ── */}
+        <ModuleSyncPanel
+          module="allergy"
+          title="Data Alergi di SIMGOS"
+          onUsePayload={handleUsePayload}
+        />
+
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs
           methods={AVAILABLE_METHODS}
@@ -190,7 +214,10 @@ export default function AllergyIntolerancePage() {
         {/* ── 4. Request + Response Panel ── */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Form panel */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4 overflow-y-auto max-h-[72vh]">
+          <div
+            ref={formRef}
+            className="scroll-mt-20 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4 overflow-y-auto max-h-[72vh]"
+          >
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Request
@@ -202,6 +229,7 @@ export default function AllergyIntolerancePage() {
               method={activeMethod}
               loading={apiResponse.loading}
               onSubmit={handleSubmit}
+              autofillRaw={autofillRaw}
             />
           </div>
 

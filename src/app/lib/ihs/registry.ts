@@ -144,6 +144,32 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dependsOn: { refCol: "subject", refPath: "$.reference", label: "Patient" },
     detailBase: "/encounter",
   },
+
+  allergy: {
+    module: "allergy",
+    resourceType: "AllergyIntolerance",
+    table: "allergy_intolerance",
+    keyCol: "refId",
+    keyLabel: "ID Alergi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "patient", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Alergen", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "clinicalStatus",
+        label: "Status",
+        type: "code",
+        jsonPath: "$.coding[0].code",
+      },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "recordedDate", label: "Direkam", type: "date" },
+    ],
+    // AllergyIntolerance dikirim BERDASARKAN encounter → butuh encounter.reference.
+    // Belum terkirim + reference kosong ⇒ "Menunggu Encounter" (pasien belum
+    // punya kunjungan yang terkirim ke Satu Sehat).
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {
