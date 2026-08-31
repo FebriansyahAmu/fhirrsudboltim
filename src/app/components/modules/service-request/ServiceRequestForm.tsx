@@ -44,6 +44,12 @@ import { safeJsonParse, safeJsonStringify } from "@/app/lib/utils/security";
 // Props
 // ─────────────────────────────────────────────
 
+/** Payload autofill dari panel SIMGOS (nonce memicu ulang meski JSON sama). */
+interface AutofillRaw {
+  json: string;
+  nonce: number;
+}
+
 interface ServiceRequestFormProps {
   method: HttpMethod;
   loading: boolean;
@@ -52,6 +58,7 @@ interface ServiceRequestFormProps {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => void;
+  autofillRaw?: AutofillRaw | null;
 }
 
 // ─────────────────────────────────────────────
@@ -316,6 +323,7 @@ function MutationForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: {
   method: HttpMethod;
   loading: boolean;
@@ -323,11 +331,22 @@ function MutationForm({
     payload: ServiceRequestPayload;
     resourceId?: string;
   }) => void;
+  autofillRaw?: AutofillRaw | null;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
   const [srSeq, setSrSeq] = useState(1);
+
+  // Autofill dari panel SIMGOS → buka mode Raw JSON + isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   const needsId = method === "PUT" || method === "PATCH";
   const orgId = process.env.NEXT_PUBLIC_SATU_SEHAT_ORG_ID ?? "ORG_ID_NOT_SET";
@@ -1350,6 +1369,7 @@ export default function ServiceRequestForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: ServiceRequestFormProps) {
   if (method === "GET") {
     return (
@@ -1362,6 +1382,7 @@ export default function ServiceRequestForm({
       method={method}
       loading={loading}
       onSubmit={(params) => onSubmit(params)}
+      autofillRaw={autofillRaw}
     />
   );
 }

@@ -94,6 +94,17 @@ export interface IhsModuleSpec {
    * kumpulan Condition/Observation/Procedure/… berdasar No. Pendaftaran).
    */
   detailBase?: string;
+  /**
+   * Kondisi dasar (WHERE) untuk MEMBATASI baris modul ini pada tabel yang
+   * TERCAMPUR — mis. hanya LAB (kategori "Laboratory procedure", code
+   * 108252007) dari `service_request` yang juga memuat Radiologi. Diterapkan
+   * ke SEMUA kueri (summary + rows). Nilai internal/tepercaya.
+   */
+  baseFilter?: {
+    col: string; // kolom sumber (mis. "category")
+    jsonPath?: string; // path skalar (mis. "$[0].coding[0].code")
+    equals: string; // nilai yang harus cocok
+  };
 }
 
 export const IHS_MODULES: Record<string, IhsModuleSpec> = {
@@ -168,6 +179,91 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     // AllergyIntolerance dikirim BERDASARKAN encounter → butuh encounter.reference.
     // Belum terkirim + reference kosong ⇒ "Menunggu Encounter" (pasien belum
     // punya kunjungan yang terkirim ke Satu Sehat).
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // ── ServiceRequest: satu resource, beberapa jenis tindakan ──
+  // Semua butuh encounter.reference untuk dikirim → dependsOn Encounter.
+
+  // Laboratorium — dari tabel `service_request` yang TERCAMPUR (LAB + Radiologi);
+  // difilter hanya kategori "Laboratory procedure" (code 108252007).
+  "servicerequest-lab": {
+    module: "servicerequest-lab",
+    resourceType: "ServiceRequest",
+    table: "service_request",
+    keyCol: "refId",
+    keyLabel: "No. Layanan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Layanan", type: "text", jsonPath: "$.text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "occurrenceDateTime", label: "Waktu", type: "date" },
+    ],
+    baseFilter: {
+      col: "category",
+      jsonPath: "$[0].coding[0].code",
+      equals: "108252007",
+    },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Jadwal Kontrol — tabel khusus.
+  "servicerequest-jadwal": {
+    module: "servicerequest-jadwal",
+    resourceType: "ServiceRequest",
+    table: "service_request_jadwal_kontrol",
+    keyCol: "refId",
+    keyLabel: "No. Layanan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Layanan", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "occurrenceDateTime", label: "Waktu", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Pemeriksaan EKG — tabel khusus.
+  "servicerequest-ekg": {
+    module: "servicerequest-ekg",
+    resourceType: "ServiceRequest",
+    table: "service_request_pemeriksaan_ekg",
+    keyCol: "refId",
+    keyLabel: "No. Layanan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Layanan", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "occurrenceDateTime", label: "Waktu", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Rencana Rawat Inap (Surat Perintah Rawat Inap) — tabel khusus.
+  "servicerequest-ranap": {
+    module: "servicerequest-ranap",
+    resourceType: "ServiceRequest",
+    table: "service_request_perencana_rawat_inap",
+    keyCol: "refId",
+    keyLabel: "No. Layanan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Layanan", type: "text", jsonPath: "$.text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "occurrencePeriod", label: "Mulai", type: "date", jsonPath: "$.start" },
+    ],
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 };

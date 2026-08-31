@@ -170,6 +170,17 @@ function buildWhere(
   const conds: string[] = [];
   const params: unknown[] = [];
 
+  // Batasan dasar tabel tercampur (mis. hanya LAB dari service_request).
+  if (spec.baseFilter) {
+    const bf = spec.baseFilter;
+    const col = ident(bf.col);
+    const expr = bf.jsonPath
+      ? `JSON_UNQUOTE(JSON_EXTRACT(\`${col}\`, '${identPath(bf.jsonPath)}'))`
+      : `\`${col}\``;
+    conds.push(`${expr} = ?`);
+    params.push(bf.equals);
+  }
+
   if (filter === "terkirim") conds.push("id IS NOT NULL");
   else if (filter === "belum") conds.push("id IS NULL");
   else if (filter === "siap" && spec.readyFlag) {
@@ -404,6 +415,7 @@ const GLOBAL_BOOKKEEPING = new Set([
   "statusRequest",
   "httpRequest",
   "get",
+  "kunjungan", // id kunjungan internal SIMGOS — bukan field FHIR
   "jenis",
   "barang",
   "group_racikan",
