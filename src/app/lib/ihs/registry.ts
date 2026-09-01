@@ -17,6 +17,13 @@ export type SyncCellType =
   | "datetime"
   | "code";
 
+/** Satu ketergantungan referensi (resource lain yang harus terkirim dulu). */
+export interface DependsRef {
+  refCol: string; // kolom JSON pemegang referensi, mis. "subject"
+  refPath: string; // path ke reference, mis. "$.reference"
+  label: string; // nama resource dependensi, mis. "Patient"
+}
+
 export interface SyncColumn {
   col: string; // nama kolom di tabel staging
   label: string; // judul kolom di UI
@@ -100,12 +107,12 @@ export interface IhsModuleSpec {
    * Bila baris belum terkirim DAN referensinya belum terbentuk (mis.
    * encounter.subject.reference = `Patient/<id>` belum ada), tampilkan notice
    * "Menunggu <label>". Deteksi via JSON_EXTRACT server-side.
+   *
+   * Bisa satu referensi ATAU beberapa (mis. MedicationRequest butuh Medication
+   * DAN Encounter) — baris "menunggu" bila SALAH SATU referensi belum ada,
+   * dan chip menampilkan nama referensi yang masih kurang.
    */
-  dependsOn?: {
-    refCol: string; // kolom JSON pemegang referensi, mis. "subject"
-    refPath: string; // path ke reference, mis. "$.reference"
-    label: string; // nama resource dependensi, mis. "Patient"
-  };
+  dependsOn?: DependsRef | DependsRef[];
   /**
    * Bila diisi, tiap baris menampilkan tombol "Detail" yang menuju
    * `${detailBase}/${key}` — halaman rincian resource (mis. encounter →
@@ -925,6 +932,45 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
     ],
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+  },
+
+  // ── MedicationRequest (resep obat) ──
+  // Butuh DUA referensi: Medication (obat harus terkirim dulu) DAN Encounter
+  // (dalam konteks kunjungan). Baris "menunggu" bila salah satu belum ada.
+  // PK komposit (refId, barang, group_racikan) → keyCols.
+  "medication-request": {
+    module: "medication-request",
+    resourceType: "MedicationRequest",
+    table: "medication_request",
+    keyCol: "refId",
+    keyCols: ["barang", "group_racikan"],
+    keyLabel: "No. Resep",
+    readyFlag: "send",
+    orderCol: "refId",
+    // reportedBoolean tinyint → boolean FHIR saat merakit payload.
+    boolCols: ["reportedBoolean"],
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      {
+        col: "medicationReference",
+        label: "Obat",
+        type: "text",
+        jsonPath: "$.display",
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "authoredOn", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    // Dua dependensi — Medication & Encounter (keduanya harus terkirim dulu).
+    dependsOn: [
+      {
+        refCol: "medicationReference",
+        refPath: "$.reference",
+        label: "Medication",
+      },
+      { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+    ],
   },
 };
 

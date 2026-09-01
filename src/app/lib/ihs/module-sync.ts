@@ -8,7 +8,18 @@
 
 import { simgosQuery } from "@/app/lib/db/simgos";
 import { getAttemptedIdentifiers } from "./notes.dal";
-import type { IhsModuleSpec, SyncCellType } from "./registry";
+import type { DependsRef, IhsModuleSpec, SyncCellType } from "./registry";
+
+/** Normalisasi dependsOn (satu objek atau array) → array. */
+function depsOf(spec: IhsModuleSpec): DependsRef[] {
+  if (!spec.dependsOn) return [];
+  return Array.isArray(spec.dependsOn) ? spec.dependsOn : [spec.dependsOn];
+}
+
+/** Label semua referensi dependensi (untuk header panel). */
+export function dependsLabels(spec: IhsModuleSpec): string[] {
+  return depsOf(spec).map((d) => d.label);
+}
 
 const SCHEMA = "kemkes-ihs";
 
@@ -45,6 +56,8 @@ export interface SyncRow {
   attempted: boolean;
   /** Belum terkirim karena referensi dependensi belum ada (mis. Patient). */
   waitingRef: boolean;
+  /** Nama referensi yang masih kurang (mis. ["Medication", "Encounter"]). */
+  waitingFor: string[];
   satuSehatId: string | null;
   cells: SyncCell[];
 }
@@ -206,8 +219,15 @@ export async function getModuleSyncSummary(
   const readySql = spec.readyFlag
     ? `SUM(id IS NULL AND \`${ident(spec.readyFlag)}\` = 1)`
     : "0";
-  const menungguSql = spec.dependsOn
-    ? `SUM(id IS NULL AND (\`${ident(spec.dependsOn.refCol)}\` IS NULL OR JSON_EXTRACT(\`${ident(spec.dependsOn.refCol)}\`, '${identPath(spec.dependsOn.refPath)}') IS NULL))`
+  // Menunggu bila belum terkirim DAN salah satu referensi dependensi belum ada.
+  const deps = depsOf(spec);
+  const menungguSql = deps.length
+    ? `SUM(id IS NULL AND (${deps
+        .map(
+          (d) =>
+            `\`${ident(d.refCol)}\` IS NULL OR JSON_EXTRACT(\`${ident(d.refCol)}\`, '${identPath(d.refPath)}') IS NULL`,
+        )
+        .join(" OR ")}))`
     : "0";
 
   // Summary hanya di-scope oleh range tanggal (bukan filter status kirim).
@@ -270,10 +290,11 @@ function buildSelect(spec: IhsModuleSpec): string {
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
-  if (spec.dependsOn)
+  depsOf(spec).forEach((d, i) =>
     select.push(
-      `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(spec.dependsOn.refCol)}\`, '${identPath(spec.dependsOn.refPath)}')) AS _depref`,
-    );
+      `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(d.refCol)}\`, '${identPath(d.refPath)}')) AS _depref${i}`,
+    ),
+  );
   spec.columns.forEach((c, i) => {
     // Ekstrak skalar dari kolom JSON server-side → transfer ringan.
     select.push(`${colExpr(c.col, c.jsonPath)} AS \`col_${i}\``);
@@ -295,7 +316,18 @@ async function finalizeRows(
     attempted = await getAttemptedIdentifiers(spec.attemptMatch.logResourceType);
   }
 
-  const rows: SyncRow[] = raw.map((r) => ({
+  const deps = depsOf(spec);
+
+  const rows: SyncRow[] = raw.map((r) => {
+    // Referensi dependensi yang masih kurang (hanya relevan bila belum terkirim).
+    const waitingFor =
+      r._id == null
+        ? deps
+            .filter((_, i) => r[`_depref${i}`] == null || r[`_depref${i}`] === "")
+            .map((d) => d.label)
+        : [];
+
+    return {
     key: rowKey(spec, r),
     sent: r._id != null,
     satuSehatId: r._id != null ? String(r._id) : null,
@@ -305,10 +337,8 @@ async function finalizeRows(
       r._id == null &&
       r._nik != null &&
       attempted.has(String(r._nik)),
-    waitingRef:
-      spec.dependsOn != null &&
-      r._id == null &&
-      (r._depref == null || r._depref === ""),
+    waitingRef: waitingFor.length > 0,
+    waitingFor,
     cells: spec.columns.map((c, i) => {
       // Ambil nilai pertama yang tak-null: primer → cadangan (alt).
       let raw = r[`col_${i}`];
@@ -323,7 +353,8 @@ async function finalizeRows(
       }
       return { label: c.label, type: c.type, value: formatCell(raw, c.type) };
     }),
-  }));
+    };
+  });
 
   // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask.
   await enrichMasterName(spec, rows);

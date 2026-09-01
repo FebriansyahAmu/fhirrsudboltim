@@ -11,6 +11,7 @@ import {
   getModuleSyncRows,
   getNotedSyncRows,
   countForFilter,
+  dependsLabels,
   type SyncFilter,
   type DateRange,
 } from "@/app/lib/ihs/module-sync";
@@ -88,7 +89,8 @@ export async function GET(
       keyLabel: spec.keyLabel,
       columns: spec.columns.map((c) => ({ label: c.label, type: c.type })),
       createFromMaster: spec.createFromMaster ?? false,
-      dependsOnLabel: spec.dependsOn?.label ?? null,
+      dependsOnLabel: dependsLabels(spec)[0] ?? null,
+      dependsOnLabels: dependsLabels(spec),
       detailBase: spec.detailBase ?? null,
       supportsDate,
       dateFrom: range?.from ?? null,

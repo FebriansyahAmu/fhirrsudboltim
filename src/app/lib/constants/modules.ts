@@ -133,9 +133,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
     icon: LuPill,
     desc: "Resep obat",
     group: "Obat & Diagnosa",
-    methods: ["POST", "GET"],
-    badge: "Beta",
-    hasPage: false,
+    methods: ["POST", "GET", "PUT", "PATCH"],
+    badge: "Active",
   },
   {
     name: "AllergyIntolerance",

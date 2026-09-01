@@ -39,6 +39,7 @@ interface Row {
   ready: boolean;
   attempted: boolean;
   waitingRef: boolean;
+  waitingFor?: string[];
   satuSehatId: string | null;
   cells: Cell[];
 }
@@ -67,6 +68,7 @@ interface SyncResponse {
   rows: Row[];
   createFromMaster?: boolean;
   dependsOnLabel?: string | null;
+  dependsOnLabels?: string[];
   detailBase?: string | null;
   notes?: Record<string, RowNoteApi>;
   noteCounts?: NoteCounts;
@@ -292,6 +294,11 @@ export default function ModuleSyncPanel({
   const supportsMaster = data?.createFromMaster ?? false;
   const supportsDate = data?.supportsDate ?? false;
   const dependsOnLabel = data?.dependsOnLabel ?? null;
+  // Gabungan label semua dependensi (mis. "Medication / Encounter") untuk header.
+  const dependsOnAll =
+    data?.dependsOnLabels && data.dependsOnLabels.length
+      ? data.dependsOnLabels.join(" / ")
+      : dependsOnLabel;
   const detailBase = data?.detailBase ?? null;
   const noteCounts = data?.noteCounts;
 
@@ -406,7 +413,7 @@ export default function ModuleSyncPanel({
               {summary.menunggu > 0 && (
                 <span className="inline-flex items-center gap-1 text-orange-600">
                   <LuUserRoundX className="h-3.5 w-3.5" />
-                  {fmt(summary.menunggu)} menunggu {dependsOnLabel ?? "ref"}
+                  {fmt(summary.menunggu)} menunggu {dependsOnAll ?? "ref"}
                 </span>
               )}
               <span className="text-slate-300">·</span>
@@ -626,13 +633,21 @@ export default function ModuleSyncPanel({
                                 </span>
                               </span>
                             ) : r.waitingRef ? (
-                              <span
-                                className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700"
-                                title={`Belum bisa dikirim: ${dependsOnLabel ?? "referensi"} belum ada di Satu Sehat`}
-                              >
-                                <LuUserRoundX className="h-3 w-3" />
-                                Menunggu {dependsOnLabel ?? "referensi"}
-                              </span>
+                              (() => {
+                                const miss =
+                                  r.waitingFor && r.waitingFor.length
+                                    ? r.waitingFor.join(" & ")
+                                    : (dependsOnAll ?? "referensi");
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700"
+                                    title={`Belum bisa dikirim: ${miss} belum ada di Satu Sehat`}
+                                  >
+                                    <LuUserRoundX className="h-3 w-3" />
+                                    Menunggu {miss}
+                                  </span>
+                                );
+                              })()
                             ) : r.attempted ? (
                               <span
                                 className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700"

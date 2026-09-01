@@ -186,6 +186,55 @@ export interface MedicationPayload {
   extension?: unknown[];
 }
 
+// ─────────────────────────────────────────────
+// MedicationRequest (resep obat)
+// Ref: https://www.hl7.org/fhir/medicationrequest.html
+// ─────────────────────────────────────────────
+
+export type MedicationRequestStatus =
+  | "active"
+  | "on-hold"
+  | "cancelled"
+  | "completed"
+  | "entered-in-error"
+  | "stopped"
+  | "draft"
+  | "unknown";
+
+export type MedicationRequestIntent =
+  | "proposal"
+  | "plan"
+  | "order"
+  | "original-order"
+  | "reflex-order"
+  | "filler-order"
+  | "instance-order"
+  | "option";
+
+/**
+ * Payload MedicationRequest yang dikirim ke Satu Sehat.
+ * Butuh medicationReference (Medication) & encounter (Encounter). Bagian
+ * dosageInstruction/dispenseRequest kompleks → dibiarkan longgar (unknown).
+ */
+export interface MedicationRequestPayload {
+  resourceType: "MedicationRequest";
+  id?: string;
+  identifier?: { system?: string; use?: string; value?: string }[];
+  status: MedicationRequestStatus;
+  intent: MedicationRequestIntent;
+  category?: { coding: FhirCoding[] }[];
+  priority?: string;
+  medicationReference: FhirReference;
+  subject: FhirReference;
+  encounter?: FhirReference;
+  authoredOn?: string;
+  requester?: FhirReference;
+  reasonCode?: FhirCodeableConcept[];
+  courseOfTherapyType?: FhirCodeableConcept;
+  dosageInstruction?: unknown[];
+  dispenseRequest?: unknown;
+}
+
 export interface FhirOperationOutcome {
   resourceType: "OperationOutcome";
   issue: Array<{
