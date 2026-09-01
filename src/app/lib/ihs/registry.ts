@@ -57,6 +57,13 @@ export interface IhsModuleSpec {
    */
   keyCols?: string[];
   keyLabel: string; // judul kolom kunci
+  /**
+   * Kolom & label untuk fitur "cari" (enableKeySearch). Default: keyCol/keyLabel.
+   * Dipakai bila pencarian memakai kolom BERBEDA dari kunci baris — mis.
+   * Patient dicari via `nik` (bukan refId/NORM). Prefix match, ramah indeks.
+   */
+  searchCol?: string;
+  searchLabel?: string;
   readyFlag: SyncReadyFlag; // flag "siap kirim"
   orderCol: string; // kolom untuk ORDER BY DESC
   columns: SyncColumn[]; // kolom tambahan yang ditampilkan
@@ -139,6 +146,9 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "patient",
     keyCol: "refId",
     keyLabel: "NORM",
+    // Pencarian pasien memakai NIK (kolom `nik`), bukan NORM.
+    searchCol: "nik",
+    searchLabel: "NIK",
     readyFlag: "statusRequest",
     orderCol: "getDate",
     columns: [

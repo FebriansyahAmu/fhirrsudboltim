@@ -95,6 +95,7 @@ export async function GET(
       module: spec.module,
       resourceType: spec.resourceType,
       keyLabel: spec.keyLabel,
+      searchLabel: spec.searchLabel ?? spec.keyLabel,
       columns: spec.columns.map((c) => ({ label: c.label, type: c.type })),
       createFromMaster: spec.createFromMaster ?? false,
       dependsOnLabel: dependsLabels(spec)[0] ?? null,

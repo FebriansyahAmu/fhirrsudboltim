@@ -156,6 +156,7 @@ export default function PatientPage() {
           module="patient"
           title="Data Patient di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableKeySearch
         />
 
         {/* ── 2. Method Tabs ── */}

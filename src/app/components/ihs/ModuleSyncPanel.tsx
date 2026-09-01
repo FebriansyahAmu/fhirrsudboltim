@@ -62,6 +62,7 @@ interface NoteCounts {
 }
 interface SyncResponse {
   keyLabel: string;
+  searchLabel?: string;
   columns: { label: string; type: string }[];
   summary: {
     total: number;
@@ -746,8 +747,8 @@ export default function ModuleSyncPanel({
                       onKeyDown={(e) => {
                         if (e.key === "Enter") applyKeySearch();
                       }}
-                      placeholder={`Cari ${data?.keyLabel ?? "No. Pendaftaran"}…`}
-                      aria-label={`Cari ${data?.keyLabel ?? "No. Pendaftaran"}`}
+                      placeholder={`Cari ${data?.searchLabel ?? data?.keyLabel ?? "No. Pendaftaran"}…`}
+                      aria-label={`Cari ${data?.searchLabel ?? data?.keyLabel ?? "No. Pendaftaran"}`}
                       className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-700 placeholder-slate-300 transition-all focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
                     />
                     {keyInput && (

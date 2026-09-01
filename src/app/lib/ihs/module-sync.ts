@@ -214,10 +214,10 @@ function buildWhere(
   conds.push(...dk.conds);
   params.push(...dk.params);
 
-  // Pencarian by key (mis. No. Pendaftaran = refId) — prefix match, ramah indeks.
-  // keyQuery sudah divalidasi alfanumerik di route (tanpa wildcard LIKE).
+  // Pencarian (mis. No. Pendaftaran=refId, atau NIK utk Patient) — prefix match,
+  // ramah indeks. keyQuery sudah divalidasi alfanumerik di route (tanpa wildcard).
   if (keyQuery) {
-    conds.push(`\`${ident(spec.keyCol)}\` LIKE ?`);
+    conds.push(`\`${ident(spec.searchCol ?? spec.keyCol)}\` LIKE ?`);
     params.push(`${keyQuery}%`);
   }
 
