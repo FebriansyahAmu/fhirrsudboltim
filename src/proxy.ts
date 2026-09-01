@@ -9,6 +9,7 @@ import { verifyToken, COOKIE_NAME } from "@/app/lib/session";
 // Route yang membutuhkan autentikasi (prefix match)
 const PROTECTED_PREFIXES = [
   "/dashboard",
+  "/analytics",
   "/careplan",
   "/allergy",
   "/clinical-impression",
@@ -29,6 +30,7 @@ const PROTECTED_PREFIXES = [
   "/api/tools",
   "/api/logs",
   "/api/ihs",
+  "/api/analytics",
 ];
 
 // Route publik — user yang sudah login di-redirect ke dashboard

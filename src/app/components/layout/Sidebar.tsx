@@ -7,6 +7,7 @@ import { useEffect, useCallback } from "react";
 import type { IconType } from "react-icons";
 import {
   LuLayoutDashboard,
+  LuChartColumnIncreasing,
   LuDatabase,
   LuStethoscope,
   LuPill,
@@ -133,6 +134,15 @@ function NavContent({
           desc="Overview pengiriman"
           path="/dashboard"
           isActive={pathname === "/dashboard"}
+          collapsed={collapsed}
+          onClick={onNavigate}
+        />
+        <NavItem
+          icon={LuChartColumnIncreasing}
+          name="Dashboard Analitik"
+          desc="Statistik & tren kirim"
+          path="/analytics"
+          isActive={pathname === "/analytics"}
           collapsed={collapsed}
           onClick={onNavigate}
         />
