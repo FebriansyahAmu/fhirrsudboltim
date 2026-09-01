@@ -94,3 +94,74 @@ export async function resolveEncounterSubjectsByNopen(
   }
   return out;
 }
+
+// ── Petunjuk "calon pasien" untuk baris yang masih Menunggu Patient ─────────
+// Baris ini pasiennya BELUM punya IHS id (belum di-POST), jadi kolom Pasien
+// tetap "—". Untuk membantu operator tahu INI pasien siapa (nama + NIK), kita
+// resolusi dari MASTER SIMGOS (bukan dari kemkes-ihs). Hanya untuk tooltip —
+// nama TIDAK ditaruh di kolom Pasien.
+//   NOPEN → pendaftaran.pendaftaran.NORM
+//         → master.pasien.NAMA (+ gelar)
+//         → master.kartu_identitas_pasien.NOMOR (NIK, JENIS = 1)
+
+export interface EncounterPatientHint {
+  name?: string;
+  nik?: string;
+}
+
+/** Susun nama tampilan pasien: "<gelar depan> <NAMA>, <gelar belakang>". */
+function buildPatientName(
+  nama: unknown,
+  gd: unknown,
+  gb: unknown,
+): string | undefined {
+  const n = String(nama ?? "").trim();
+  if (!n) return undefined;
+  const front = String(gd ?? "").trim();
+  const back = String(gb ?? "").trim();
+  let s = front ? `${front} ${n}` : n;
+  if (back) s = `${s}, ${back}`;
+  return s;
+}
+
+/**
+ * Batch: resolusi petunjuk (nama + NIK) untuk banyak NOPEN. Key map = NOPEN.
+ * Hanya baris yang punya minimal nama ATAU NIK yang dimasukkan.
+ */
+export async function resolveEncounterPatientHintsByNopen(
+  nopens: string[],
+): Promise<Map<string, EncounterPatientHint>> {
+  const clean = [...new Set(nopens.filter((n) => NOPEN_RE.test(n)))];
+  const out = new Map<string, EncounterPatientHint>();
+  if (clean.length === 0) return out;
+
+  const placeholders = clean.map(() => "?").join(", ");
+  const rows = await simgosQuery<{
+    nopen: string;
+    nama: string | null;
+    gd: string | null;
+    gb: string | null;
+    nik: string | null;
+  }>(
+    `SELECT p.NOMOR AS nopen, mp.NAMA AS nama, mp.GELAR_DEPAN AS gd,
+            mp.GELAR_BELAKANG AS gb, ki.NOMOR AS nik
+       FROM \`pendaftaran\`.\`pendaftaran\` p
+       JOIN \`master\`.\`pasien\` mp ON mp.NORM = p.NORM
+       LEFT JOIN \`master\`.\`kartu_identitas_pasien\` ki
+         ON ki.NORM = p.NORM AND ki.JENIS = 1
+      WHERE p.NOMOR IN (${placeholders})`,
+    clean,
+  );
+
+  for (const r of rows) {
+    const nopen = String(r.nopen ?? "");
+    if (!nopen || out.has(nopen)) continue; // yang pertama menang
+    const name = buildPatientName(r.nama, r.gd, r.gb);
+    const nikRaw = String(r.nik ?? "").trim();
+    const nik = nikRaw || undefined;
+    if (name || nik) {
+      out.set(nopen, { ...(name ? { name } : {}), ...(nik ? { nik } : {}) });
+    }
+  }
+  return out;
+}

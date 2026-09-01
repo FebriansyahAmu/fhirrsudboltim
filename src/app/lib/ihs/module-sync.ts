@@ -8,7 +8,10 @@
 
 import { simgosQuery } from "@/app/lib/db/simgos";
 import { getAttemptedIdentifiers } from "./notes.dal";
-import { resolveEncounterSubjectsByNopen } from "./encounter-subject";
+import {
+  resolveEncounterSubjectsByNopen,
+  resolveEncounterPatientHintsByNopen,
+} from "./encounter-subject";
 import type { DependsRef, IhsModuleSpec, SyncCellType } from "./registry";
 
 /** Normalisasi dependsOn (satu objek atau array) → array. */
@@ -61,6 +64,12 @@ export interface SyncRow {
   waitingFor: string[];
   satuSehatId: string | null;
   cells: SyncCell[];
+  /**
+   * Petunjuk "calon pasien" (nama + NIK dari master SIMGOS) untuk baris
+   * Encounter yang masih Menunggu Patient — HANYA untuk tooltip. Tidak
+   * dimasukkan ke kolom Pasien (tetap "—" hingga Patient berhasil di-POST).
+   */
+  hint?: { name?: string; nik?: string };
 }
 
 // ── Helpers ────────────────────────────────────────────────
@@ -435,7 +444,38 @@ async function finalizeRows(
   // Encounter: subject bisa BASI — isi nama & lepas status "menunggu Patient"
   // bila pasiennya kini sudah punya IHS id.
   await enrichEncounterSubject(spec, rows);
+  // Encounter: baris yang MASIH Menunggu Patient → lampirkan petunjuk (nama +
+  // NIK dari master) untuk tooltip. Tidak mengisi kolom Pasien.
+  await enrichEncounterWaitingHint(spec, rows);
   return rows;
+}
+
+/**
+ * Encounter-only: untuk baris yang masih Menunggu Patient (belum terkirim,
+ * pasien belum punya IHS id), lampirkan `hint` {name, nik} dari master SIMGOS
+ * (satu kueri batch) — dipakai UI hanya sebagai tooltip pada No. Pendaftaran.
+ * Kolom Pasien tetap "—". Read-only.
+ */
+async function enrichEncounterWaitingHint(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+): Promise<void> {
+  if (spec.module !== "encounter") return;
+
+  const targets = rows.filter(
+    (r) => !r.sent && r.waitingFor.includes("Patient") && /^\d+$/.test(r.key),
+  );
+  if (targets.length === 0) return;
+
+  const hintMap = await resolveEncounterPatientHintsByNopen(
+    targets.map((r) => r.key),
+  );
+  if (hintMap.size === 0) return;
+
+  for (const r of targets) {
+    const h = hintMap.get(r.key);
+    if (h) r.hint = h;
+  }
 }
 
 /**

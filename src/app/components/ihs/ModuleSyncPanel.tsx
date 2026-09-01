@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import DateRangePicker from "./DateRangePicker";
 import {
@@ -51,6 +52,7 @@ interface Row {
   waitingFor?: string[];
   satuSehatId: string | null;
   cells: Cell[];
+  hint?: { name?: string; nik?: string };
 }
 
 interface NoteCounts {
@@ -221,6 +223,50 @@ export default function ModuleSyncPanel({
   const [data, setData] = useState<SyncResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tooltip "calon pasien" (nama + NIK) untuk baris Menunggu Patient.
+  // Dibuka dengan KLIK (pinned) agar tidak langsung tertutup → NIK bisa disalin.
+  const [pinnedHint, setPinnedHint] = useState<{
+    key: string;
+    name?: string;
+    nik?: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [hintCopied, setHintCopied] = useState(false);
+  const hintPopRef = useRef<HTMLDivElement>(null);
+
+  // Tutup tooltip pinned saat klik di luar (bukan popover & bukan pemicu) / Escape.
+  useEffect(() => {
+    setHintCopied(false);
+    if (!pinnedHint) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (hintPopRef.current?.contains(t)) return; // klik di dalam popover
+      if (t instanceof Element && t.closest("[data-hint-trigger]")) return; // biar onClick pemicu yang menoggle
+      setPinnedHint(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPinnedHint(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pinnedHint]);
+
+  const copyHintNik = async () => {
+    if (!pinnedHint?.nik) return;
+    try {
+      await navigator.clipboard.writeText(pinnedHint.nik);
+      setHintCopied(true);
+      setTimeout(() => setHintCopied(false), 1200);
+    } catch {
+      /* abaikan kegagalan clipboard */
+    }
+  };
 
   // Modal payload
   const [payloadKey, setPayloadKey] = useState<string | null>(null);
@@ -963,7 +1009,37 @@ export default function ModuleSyncPanel({
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
                               </span>
                             )}
-                            {r.key}
+                            {r.hint && (r.hint.name || r.hint.nik) ? (
+                              <button
+                                type="button"
+                                data-hint-trigger="true"
+                                title="Lihat calon pasien (nama & NIK)"
+                                className="cursor-pointer appearance-none border-0 border-b border-dotted border-orange-300 bg-transparent p-0 font-mono text-xs text-slate-700 underline-offset-2 hover:border-orange-500"
+                                onClick={(e) => {
+                                  if (pinnedHint?.key === r.key) {
+                                    setPinnedHint(null);
+                                    return;
+                                  }
+                                  const rect =
+                                    e.currentTarget.getBoundingClientRect();
+                                  const openUp =
+                                    rect.bottom > window.innerHeight - 140;
+                                  setPinnedHint({
+                                    key: r.key,
+                                    name: r.hint?.name,
+                                    nik: r.hint?.nik,
+                                    top: openUp
+                                      ? rect.top - 140
+                                      : rect.bottom + 6,
+                                    left: rect.left,
+                                  });
+                                }}
+                              >
+                                {r.key}
+                              </button>
+                            ) : (
+                              r.key
+                            )}
                           </td>
                           {r.cells.map((cell, i) => (
                             <td
@@ -1377,6 +1453,63 @@ export default function ModuleSyncPanel({
           </div>
         </div>
       )}
+
+      {/* Tooltip "calon pasien" — di-portal ke body (fixed) agar tak terpotong
+          overflow tabel. Dibuka dengan KLIK No. Pendaftaran (pinned) → interaktif
+          agar NIK bisa disalin. Tutup via klik di luar / Escape / tombol X. */}
+      {pinnedHint &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={hintPopRef}
+            style={{
+              position: "fixed",
+              top: pinnedHint.top,
+              left: pinnedHint.left,
+              zIndex: 60,
+            }}
+            className="max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500">
+                Calon pasien · belum di Satu Sehat
+              </p>
+              <button
+                type="button"
+                onClick={() => setPinnedHint(null)}
+                aria-label="Tutup"
+                className="-mr-1 -mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              >
+                <LuX className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {pinnedHint.name && (
+              <p className="mt-0.5 text-xs font-bold text-slate-800">
+                {pinnedHint.name}
+              </p>
+            )}
+            <div className="mt-1 flex items-center gap-2">
+              <span className="font-mono text-[11px] text-slate-500">
+                NIK: {pinnedHint.nik ?? "—"}
+              </span>
+              {pinnedHint.nik && (
+                <button
+                  type="button"
+                  onClick={copyHintNik}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                >
+                  {hintCopied ? (
+                    <LuCheck className="h-3 w-3 text-emerald-600" />
+                  ) : (
+                    <LuCopy className="h-3 w-3" />
+                  )}
+                  {hintCopied ? "Tersalin" : "Salin"}
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }
