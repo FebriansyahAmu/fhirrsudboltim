@@ -26,9 +26,16 @@ import {
   LuUserRoundX,
   LuLayoutList,
   LuListChecks,
+  LuSearch,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
+
+// Label ramah untuk field yang dilengkapi otomatis server-side (enriched).
+const ENRICHED_LABEL: Record<string, string> = {
+  subject: "Pasien (subject)",
+  participant: "DPJP (participant)",
+};
 
 interface Cell {
   label: string;
@@ -186,6 +193,7 @@ export default function ModuleSyncPanel({
   defaultOpen = false,
   onUsePayload,
   enableQueue = false,
+  enableKeySearch = false,
 }: {
   module: string;
   title?: string;
@@ -198,12 +206,16 @@ export default function ModuleSyncPanel({
    * di server. Baris "Menunggu <ref>" & sudah terkirim otomatis dilewati.
    */
   enableQueue?: boolean;
+  /** Aktifkan kotak pencarian berdasarkan key (mis. No. Pendaftaran = refId). */
+  enableKeySearch?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
   const [noteFilter, setNoteFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
+  const [keyInput, setKeyInput] = useState(""); // teks di kotak cari
+  const [keyQuery, setKeyQuery] = useState(""); // kata kunci yang diterapkan
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SyncResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -244,6 +256,7 @@ export default function ModuleSyncPanel({
       nf: string,
       df: string | null,
       dt: string | null,
+      kq: string,
       signal?: AbortSignal,
     ) => {
       setLoading(true);
@@ -252,8 +265,9 @@ export default function ModuleSyncPanel({
         const noteQs = nf ? `&note=${nf}` : "";
         const dateQs =
           (df ? `&from=${df}` : "") + (dt ? `&to=${dt}` : "");
+        const keyQs = kq ? `&key=${encodeURIComponent(kq)}` : "";
         const res = await fetch(
-          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}`,
+          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}${keyQs}`,
           { credentials: "same-origin", signal },
         );
         const json = await res.json();
@@ -272,9 +286,9 @@ export default function ModuleSyncPanel({
 
   useEffect(() => {
     const ctrl = new AbortController();
-    load(filter, page, noteFilter, dateFrom, dateTo, ctrl.signal);
+    load(filter, page, noteFilter, dateFrom, dateTo, keyQuery, ctrl.signal);
     return () => ctrl.abort();
-  }, [filter, page, noteFilter, dateFrom, dateTo, load]);
+  }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, load]);
 
   const openPayload = useCallback(
     async (key: string, source: PayloadSource = "staging") => {
@@ -327,6 +341,18 @@ export default function ModuleSyncPanel({
   const changeDate = (f: string | null, t: string | null) => {
     setDateFrom(f);
     setDateTo(t);
+    setPage(1);
+  };
+
+  const applyKeySearch = () => {
+    setNoteFilter(""); // pencarian key diprioritaskan atas filter catatan
+    setPage(1);
+    setKeyQuery(keyInput.trim());
+  };
+
+  const clearKeySearch = () => {
+    setKeyInput("");
+    setKeyQuery("");
     setPage(1);
   };
 
@@ -497,16 +523,16 @@ export default function ModuleSyncPanel({
     setQueueSummary({ ok, fail, total: eligible.length });
     setQueueRunning(false);
     // Muat ulang status otoritatif (terkirim → Terkirim, gagal → catatan kuning).
-    await load(filter, page, noteFilter, dateFrom, dateTo);
+    await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
     setQueueResults({});
   }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo]);
 
-  // Reset kontrol antrian saat pindah filter/halaman/tanggal.
+  // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
     setQueueSummary(null);
     setQueueResults({});
-  }, [filter, page, noteFilter, dateFrom, dateTo]);
+  }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
 
   const eligibleCount = data
     ? data.rows.filter((r) => !r.sent && !r.waitingRef).length
@@ -583,7 +609,7 @@ export default function ModuleSyncPanel({
                 </p>
                 <button
                   type="button"
-                  onClick={() => load(filter, page, noteFilter, dateFrom, dateTo)}
+                  onClick={() => load(filter, page, noteFilter, dateFrom, dateTo, keyQuery)}
                   className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-red-200 transition-colors hover:bg-red-100"
                 >
                   <LuRefreshCw className="h-3.5 w-3.5" />
@@ -634,7 +660,7 @@ export default function ModuleSyncPanel({
                   <button
                     type="button"
                     onClick={() =>
-                      load(filter, page, noteFilter, dateFrom, dateTo)
+                      load(filter, page, noteFilter, dateFrom, dateTo, keyQuery)
                     }
                     disabled={loading || queueRunning}
                     className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
@@ -704,6 +730,62 @@ export default function ModuleSyncPanel({
                     ))}
                 </div>
               </div>
+
+              {/* Pencarian berdasarkan key (mis. No. Pendaftaran = refId) */}
+              {enableKeySearch && (
+                <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+                  <div className="relative w-full max-w-xs">
+                    <LuSearch className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={keyInput}
+                      inputMode="numeric"
+                      onChange={(e) =>
+                        setKeyInput(e.target.value.replace(/[^A-Za-z0-9]/g, ""))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyKeySearch();
+                      }}
+                      placeholder={`Cari ${data?.keyLabel ?? "No. Pendaftaran"}…`}
+                      aria-label={`Cari ${data?.keyLabel ?? "No. Pendaftaran"}`}
+                      className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-700 placeholder-slate-300 transition-all focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+                    />
+                    {keyInput && (
+                      <button
+                        type="button"
+                        onClick={clearKeySearch}
+                        aria-label="Hapus pencarian"
+                        className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                      >
+                        <LuX className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyKeySearch}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
+                  >
+                    <LuSearch className="h-3.5 w-3.5" />
+                    Cari
+                  </button>
+                  {keyQuery && (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                      Hasil untuk{" "}
+                      <span className="font-mono font-semibold text-slate-700">
+                        {keyQuery}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={clearKeySearch}
+                        className="font-semibold text-teal-600 hover:underline"
+                      >
+                        reset
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Filter catatan (warna) */}
               <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
@@ -1123,7 +1205,8 @@ export default function ModuleSyncPanel({
               ) : payloadData?.enriched && payloadData.enriched.length > 0 ? (
                 <p className="inline-flex items-center gap-1.5 text-[11px] font-medium text-teal-700">
                   <LuWandSparkles className="h-3.5 w-3.5 shrink-0" />
-                  {payloadData.enriched.join(", ")} dilengkapi otomatis dari DPJP (SIMGOS)
+                  {payloadData.enriched.map((f) => ENRICHED_LABEL[f] ?? f).join(", ")}{" "}
+                  dilengkapi otomatis dari SIMGOS
                 </p>
               ) : (
                 <p className="text-[11px] text-slate-400">

@@ -8,6 +8,7 @@
 
 import { simgosQuery } from "@/app/lib/db/simgos";
 import { getAttemptedIdentifiers } from "./notes.dal";
+import { resolveEncounterSubjectsByNopen } from "./encounter-subject";
 import type { DependsRef, IhsModuleSpec, SyncCellType } from "./registry";
 
 /** Normalisasi dependsOn (satu objek atau array) → array. */
@@ -146,10 +147,15 @@ function toYymmdd(d: string): string | null {
   return m ? m[1].slice(2) + m[2] + m[3] : null;
 }
 
-/** Kondisi range pada keyCol berdasarkan encoding tanggal (yymmdd-prefix). */
+/**
+ * Kondisi range pada keyCol berdasarkan encoding tanggal (yymmdd-prefix).
+ * `alias` opsional (mis. "e") menghasilkan kolom terkualifikasi `e`.`refId`
+ * agar aman dipakai di kueri ber-JOIN (nama kolom tak ambigu).
+ */
 function keyDateConds(
   spec: IhsModuleSpec,
   range: DateRange | undefined,
+  alias = "",
 ): { conds: string[]; params: string[] } {
   const out = { conds: [] as string[], params: [] as string[] };
   if (!spec.dateKey || spec.dateKey.kind !== "yymmdd-prefix" || !range) {
@@ -157,29 +163,31 @@ function keyDateConds(
   }
   // Kolom yang di-filter: default keyCol, atau override (mis. "nopen").
   const keyCol = ident(spec.dateKey.col ?? spec.keyCol);
+  const qCol = alias ? `\`${ident(alias)}\`.\`${keyCol}\`` : `\`${keyCol}\``;
   const pad = Math.max(0, spec.dateKey.keyLength - 6);
   if (range.from) {
     const p = toYymmdd(range.from);
     if (p) {
-      out.conds.push(`\`${keyCol}\` >= ?`);
+      out.conds.push(`${qCol} >= ?`);
       out.params.push(p + "0".repeat(pad));
     }
   }
   if (range.to) {
     const p = toYymmdd(range.to);
     if (p) {
-      out.conds.push(`\`${keyCol}\` <= ?`);
+      out.conds.push(`${qCol} <= ?`);
       out.params.push(p + "9".repeat(pad));
     }
   }
   return out;
 }
 
-/** Bangun WHERE (filter status kirim + range tanggal) beserta paramnya. */
+/** Bangun WHERE (filter status kirim + range tanggal + cari key) beserta paramnya. */
 function buildWhere(
   spec: IhsModuleSpec,
   filter: SyncFilter,
   range?: DateRange,
+  keyQuery?: string,
 ): { sql: string; params: unknown[] } {
   const conds: string[] = [];
   const params: unknown[] = [];
@@ -206,6 +214,13 @@ function buildWhere(
   conds.push(...dk.conds);
   params.push(...dk.params);
 
+  // Pencarian by key (mis. No. Pendaftaran = refId) — prefix match, ramah indeks.
+  // keyQuery sudah divalidasi alfanumerik di route (tanpa wildcard LIKE).
+  if (keyQuery) {
+    conds.push(`\`${ident(spec.keyCol)}\` LIKE ?`);
+    params.push(`${keyQuery}%`);
+  }
+
   return { sql: conds.length ? `WHERE ${conds.join(" AND ")}` : "", params };
 }
 
@@ -214,6 +229,7 @@ function buildWhere(
 export async function getModuleSyncSummary(
   spec: IhsModuleSpec,
   range?: DateRange,
+  keyQuery?: string,
 ): Promise<SyncSummary> {
   const table = ident(spec.table);
   const readySql = spec.readyFlag
@@ -230,8 +246,8 @@ export async function getModuleSyncSummary(
         .join(" OR ")}))`
     : "0";
 
-  // Summary hanya di-scope oleh range tanggal (bukan filter status kirim).
-  const { sql, params } = buildWhere(spec, "semua", range);
+  // Summary di-scope oleh range tanggal & pencarian key (bukan filter status kirim).
+  const { sql, params } = buildWhere(spec, "semua", range, keyQuery);
 
   const rows = await simgosQuery<Record<string, unknown>>(
     `SELECT
@@ -245,13 +261,71 @@ export async function getModuleSyncSummary(
     params,
   );
   const r = rows[0] ?? {};
+
+  // Koreksi "menunggu" untuk Encounter: sebagian baris tampak menunggu Patient
+  // (subject.reference kosong) padahal pasiennya KINI sudah punya IHS id —
+  // subject-nya di-resolusi live saat baca/kirim, jadi sebenarnya siap.
+  let menunggu = toNum(r.menunggu);
+  if (spec.module === "encounter" && menunggu > 0) {
+    try {
+      const resolvable = await countEncounterResolvableWaiting(spec, range, keyQuery);
+      menunggu = Math.max(0, menunggu - resolvable);
+    } catch (e) {
+      // Degradasi aman: bila koreksi gagal, pertahankan angka mentah.
+      console.warn(
+        "[encounter menunggu] koreksi live gagal:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+
   return {
     total: toNum(r.total),
     terkirim: toNum(r.terkirim),
     belum: toNum(r.belum),
     siap: toNum(r.siap),
-    menunggu: toNum(r.menunggu),
+    menunggu,
   };
+}
+
+/**
+ * Hitung baris Encounter yang TAMPAK "menunggu Patient" (belum terkirim &
+ * subject.reference kosong) tapi pasiennya SUDAH punya IHS id — jadi
+ * subject-nya bisa di-resolusi live (lihat encounter-subject.ts). Dipakai
+ * untuk mengoreksi angka `menunggu` pada summary. Read-only, di-scope oleh
+ * range tanggal & pencarian key yang sama.
+ */
+async function countEncounterResolvableWaiting(
+  spec: IhsModuleSpec,
+  range?: DateRange,
+  keyQuery?: string,
+): Promise<number> {
+  const conds: string[] = [
+    "e.id IS NULL",
+    "(e.`subject` IS NULL OR JSON_EXTRACT(e.`subject`, '$.reference') IS NULL)",
+    "k.id IS NOT NULL",
+    "k.id <> ''",
+  ];
+  const params: unknown[] = [];
+
+  const dk = keyDateConds(spec, range, "e");
+  conds.push(...dk.conds);
+  params.push(...dk.params);
+
+  if (keyQuery) {
+    conds.push("e.`refId` LIKE ?");
+    params.push(`${keyQuery}%`);
+  }
+
+  const rows = await simgosQuery<{ n: number }>(
+    `SELECT COUNT(*) AS n
+       FROM \`${SCHEMA}\`.\`${ident(spec.table)}\` e
+       JOIN \`pendaftaran\`.\`pendaftaran\` p ON p.NOMOR = e.refId
+       JOIN \`${SCHEMA}\`.\`patient\` k ON k.refId = p.NORM
+      WHERE ${conds.join(" AND ")}`,
+    params,
+  );
+  return toNum(rows[0]?.n);
 }
 
 /** Validasi JSON path (registry tepercaya, tapi tetap dijaga). */
@@ -358,7 +432,48 @@ async function finalizeRows(
 
   // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask.
   await enrichMasterName(spec, rows);
+  // Encounter: subject bisa BASI — isi nama & lepas status "menunggu Patient"
+  // bila pasiennya kini sudah punya IHS id.
+  await enrichEncounterSubject(spec, rows);
   return rows;
+}
+
+/**
+ * Encounter-only: baris yang belum terkirim & masih "menunggu Patient"
+ * (subject.reference kosong di SIMGOS) tapi pasiennya KINI sudah punya IHS id
+ * → resolusi live (satu kueri batch), isi kolom "Pasien", dan lepas status
+ * menunggu (payload subject akan di-resolusi live juga saat kirim). Read-only.
+ */
+async function enrichEncounterSubject(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+): Promise<void> {
+  if (spec.module !== "encounter") return;
+
+  // Kandidat: belum terkirim, masih menunggu "Patient", key = NOPEN numerik.
+  const targets = rows.filter(
+    (r) => !r.sent && r.waitingFor.includes("Patient") && /^\d+$/.test(r.key),
+  );
+  if (targets.length === 0) return;
+
+  const subjMap = await resolveEncounterSubjectsByNopen(targets.map((r) => r.key));
+  if (subjMap.size === 0) return;
+
+  // Kolom "Pasien" = kolom subject dgn jsonPath $.display.
+  const subjIdx = spec.columns.findIndex(
+    (c) => c.col === "subject" && c.jsonPath === "$.display",
+  );
+
+  for (const r of targets) {
+    const sub = subjMap.get(r.key);
+    if (!sub) continue;
+    if (subjIdx >= 0 && sub.display) {
+      r.cells[subjIdx] = { ...r.cells[subjIdx], value: sub.display };
+    }
+    // Patient sudah punya IHS id → tak lagi menunggu Patient.
+    r.waitingFor = r.waitingFor.filter((l) => l !== "Patient");
+    r.waitingRef = r.waitingFor.length > 0;
+  }
 }
 
 export async function getModuleSyncRows(
@@ -367,6 +482,7 @@ export async function getModuleSyncRows(
   page = 1,
   pageSize = 10,
   range?: DateRange,
+  keyQuery?: string,
 ): Promise<SyncRow[]> {
   const table = ident(spec.table);
   const orderCol = ident(spec.orderCol);
@@ -374,7 +490,7 @@ export async function getModuleSyncRows(
   const size = Math.min(Math.max(1, Math.trunc(pageSize)), 100);
   const offset = (Math.max(1, Math.trunc(page)) - 1) * size;
 
-  const { sql, params } = buildWhere(spec, filter, range);
+  const { sql, params } = buildWhere(spec, filter, range, keyQuery);
 
   const raw = await simgosQuery<Record<string, unknown>>(
     `SELECT ${buildSelect(spec)}

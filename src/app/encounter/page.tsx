@@ -155,6 +155,7 @@ export default function EncounterPage() {
           title="Data Encounter di SIMGOS"
           onUsePayload={handleUsePayload}
           enableQueue
+          enableKeySearch
           defaultOpen
         />
 

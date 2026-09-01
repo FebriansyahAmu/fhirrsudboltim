@@ -34,6 +34,13 @@ function normNoteFilter(v: string | null): NoteFilter | "" {
   return "";
 }
 
+/** Validasi kata kunci pencarian key (mis. No. Pendaftaran) — alfanumerik saja. */
+function normKey(v: string | null): string | undefined {
+  if (!v) return undefined;
+  const s = v.trim();
+  return /^[A-Za-z0-9]{1,32}$/.test(s) ? s : undefined;
+}
+
 /** Validasi tanggal YYYY-MM-DD (dan kewajaran nilainya). */
 function normDate(v: string | null): string | undefined {
   if (!v) return undefined;
@@ -69,6 +76,7 @@ export async function GET(
   const sp = request.nextUrl.searchParams;
   const filter = normFilter(sp.get("filter"));
   const noteFilter = normNoteFilter(sp.get("note"));
+  const keyQuery = normKey(sp.get("key"));
   const requestedPage = Math.max(1, Number.parseInt(sp.get("page") ?? "1", 10) || 1);
 
   // Rentang tanggal hanya berlaku bila modul mendukung (spec.dateKey).
@@ -79,7 +87,7 @@ export async function GET(
 
   try {
     const [summary, noteCounts] = await Promise.all([
-      getModuleSyncSummary(spec, range),
+      getModuleSyncSummary(spec, range, keyQuery),
       getNoteCounts(spec.module),
     ]);
 
@@ -103,7 +111,8 @@ export async function GET(
     };
 
     // ── Mode "bercatatan": listing didorong tabel notes (DB kita) ──
-    if (noteFilter) {
+    // Pencarian key (keyQuery) diprioritaskan → lewati mode bercatatan.
+    if (noteFilter && !keyQuery) {
       const totalRows =
         noteFilter === "ada" ? noteCounts.total : noteCounts[noteFilter];
       const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
@@ -129,7 +138,7 @@ export async function GET(
     const totalRows = countForFilter(summary, filter);
     const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
     const page = Math.min(requestedPage, totalPages);
-    const rows = await getModuleSyncRows(spec, filter, page, PAGE_SIZE, range);
+    const rows = await getModuleSyncRows(spec, filter, page, PAGE_SIZE, range, keyQuery);
     const notes = await getNotesForKeys(
       spec.module,
       rows.map((r) => r.key),

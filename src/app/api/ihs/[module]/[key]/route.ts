@@ -9,6 +9,7 @@ import { getModuleSpec } from "@/app/lib/ihs/registry";
 import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
+import { resolveEncounterSubject } from "@/app/lib/ihs/encounter-subject";
 
 export async function GET(
   request: NextRequest,
@@ -63,12 +64,29 @@ export async function GET(
       return NextResponse.json({ error: "Data tidak ditemukan" }, { status: 404 });
     }
 
-    // Encounter: lengkapi participant (DPJP) secara otomatis bila kosong —
-    // profil Satu Sehat mewajibkannya. Resolusi via JOIN bertahap ke SIMGOS
+    // Encounter: lengkapi subject (Pasien) & participant (DPJP) otomatis bila
+    // kosong — Satu Sehat mewajibkan keduanya. Resolusi via JOIN ke SIMGOS
     // (read-only). Hanya mengisi bila belum ada; tidak menimpa.
     const enriched: string[] = [];
     if (spec.module === "encounter") {
       const payload = result.payload as Record<string, unknown>;
+
+      // subject: kolom encounter.subject SIMGOS bisa BASI (null) bila Patient
+      // di-POST setelah Encounter dibuat. Resolusi live via NORM → patient.id.
+      const subj = payload.subject;
+      const subjRef =
+        subj && typeof subj === "object" && !Array.isArray(subj)
+          ? (subj as Record<string, unknown>).reference
+          : undefined;
+      if (typeof subjRef !== "string" || !subjRef.trim()) {
+        const subject = await resolveEncounterSubject(key);
+        if (subject) {
+          payload.subject = subject;
+          enriched.push("subject");
+        }
+      }
+
+      // participant (DPJP) — profil Kemkes mewajibkannya (RuleNumber 10336).
       const part = payload.participant;
       const hasPart = Array.isArray(part) && part.length > 0;
       if (!hasPart) {
