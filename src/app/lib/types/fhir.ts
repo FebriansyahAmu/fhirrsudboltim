@@ -276,6 +276,56 @@ export interface MedicationDispensePayload {
   dosageInstruction?: unknown[];
 }
 
+// ─────────────────────────────────────────────
+// DiagnosticReport (laporan diagnostik / hasil lab)
+// Ref: https://www.hl7.org/fhir/diagnosticreport.html
+// ─────────────────────────────────────────────
+
+export type DiagnosticReportStatus =
+  | "registered"
+  | "partial"
+  | "preliminary"
+  | "final"
+  | "amended"
+  | "corrected"
+  | "appended"
+  | "cancelled"
+  | "entered-in-error"
+  | "unknown";
+
+/**
+ * Payload DiagnosticReport yang dikirim ke Satu Sehat.
+ * Mengagregasi hasil Observation (result[]) dalam konteks kunjungan
+ * (encounter), atas dasar ServiceRequest (basedOn) & Specimen. Bagian
+ * presentedForm/media kompleks → dibiarkan longgar (unknown).
+ */
+export interface DiagnosticReportPayload {
+  resourceType: "DiagnosticReport";
+  id?: string;
+  identifier?: FhirIdentifier[];
+  /** ServiceRequest yang mendasari (permintaan pemeriksaan). */
+  basedOn?: FhirReference[];
+  status: DiagnosticReportStatus;
+  category?: { coding: FhirCoding[] }[];
+  code: FhirCodeableConcept;
+  subject: FhirReference;
+  encounter?: FhirReference;
+  effectiveDateTime?: string;
+  issued?: string;
+  /** Pelaksana — Practitioner &/atau Organization. */
+  performer?: FhirReference[];
+  resultsInterpreter?: FhirReference[];
+  /** Spesimen laboratorium terkait. */
+  specimen?: FhirReference[];
+  /** Hasil observasi yang dirangkum laporan (harus terkirim dulu). */
+  result?: FhirReference[];
+  imagingStudy?: FhirReference[];
+  media?: unknown[];
+  conclusion?: string;
+  conclusionCode?: { coding: FhirCoding[] }[];
+  presentedForm?: unknown[];
+}
+
 export interface FhirOperationOutcome {
   resourceType: "OperationOutcome";
   issue: Array<{

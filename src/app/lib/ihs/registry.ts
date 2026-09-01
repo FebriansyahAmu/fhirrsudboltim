@@ -1015,6 +1015,45 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       },
     ],
   },
+
+  // ── DiagnosticReport (laporan diagnostik / hasil lab) ──
+  // Laporan mengagregasi hasil Observation (result[]) dalam konteks kunjungan,
+  // atas dasar ServiceRequest (basedOn) & Specimen. Butuh DUA referensi inti:
+  // Encounter (konteks) DAN Observation (hasil harus terkirim dulu) — baris
+  // "menunggu" bila salah satu belum ada. PK tunggal (refId unik) → tanpa keyCols.
+  "diagnostic-report": {
+    module: "diagnostic-report",
+    resourceType: "DiagnosticReport",
+    table: "diagnostic_report",
+    keyCol: "refId",
+    keyLabel: "No. Laporan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      {
+        col: "code",
+        label: "Pemeriksaan",
+        type: "text",
+        jsonPath: "$.coding[0].display",
+      },
+      {
+        col: "category",
+        label: "Kategori",
+        type: "text",
+        jsonPath: "$[0].coding[0].display",
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    // Dua dependensi inti — Encounter (konteks) & Observation (hasil/result[]).
+    dependsOn: [
+      { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+      { refCol: "result", refPath: "$[0].reference", label: "Observation" },
+    ],
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {
