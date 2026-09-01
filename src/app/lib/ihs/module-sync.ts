@@ -249,22 +249,24 @@ function colExpr(col: string, jsonPath?: string): string {
     : `\`${ident(col)}\``;
 }
 
-/** Key baris (unik). Komposit `${keyCol}_${keyCol2}` bila PK bukan kolom tunggal. */
+/** Key baris (unik). Komposit `keyCol_keyCols…` bila PK bukan kolom tunggal. */
 function rowKey(spec: IhsModuleSpec, r: Record<string, unknown>): string {
-  const k1 = String(r._key ?? "");
-  return spec.keyCol2 ? `${k1}_${String(r._key2 ?? "")}` : k1;
+  const parts = [String(r._key ?? "")];
+  (spec.keyCols ?? []).forEach((_, i) => parts.push(String(r[`_kc${i}`] ?? "")));
+  return parts.join("_");
 }
 
-/** Pecah key komposit "989_5" → ["989", "5"] (split pada "_" pertama). */
-function splitKey(key: string): [string, string] {
-  const i = key.indexOf("_");
-  return i < 0 ? [key, ""] : [key.slice(0, i), key.slice(i + 1)];
+/** Pecah key komposit "1410…_780_0" → ["1410…","780","0"] (split pada "_"). */
+function splitKey(key: string): string[] {
+  return key.split("_");
 }
 
 /** Daftar kolom SELECT (aliased) untuk satu spec. */
 function buildSelect(spec: IhsModuleSpec): string {
   const select: string[] = [`\`${ident(spec.keyCol)}\` AS _key`, "id AS _id"];
-  if (spec.keyCol2) select.push(`\`${ident(spec.keyCol2)}\` AS _key2`);
+  (spec.keyCols ?? []).forEach((c, i) =>
+    select.push(`\`${ident(c)}\` AS _kc${i}`),
+  );
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
@@ -367,12 +369,14 @@ export async function getNotedSyncRows(
   const table = ident(spec.table);
   const keyCol = ident(spec.keyCol);
 
-  // PK komposit → cocokkan pasangan (keyCol, keyCol2); selain itu IN biasa.
+  // PK komposit → cocokkan tuple (keyCol, keyCols…); selain itu IN biasa.
   let where: string;
   let params: unknown[];
-  if (spec.keyCol2) {
-    const kc2 = ident(spec.keyCol2);
-    where = keys.map(() => `(\`${keyCol}\` = ? AND \`${kc2}\` = ?)`).join(" OR ");
+  if (spec.keyCols && spec.keyCols.length) {
+    const cols = [keyCol, ...spec.keyCols.map(ident)];
+    where = keys
+      .map(() => `(${cols.map((c) => `\`${c}\` = ?`).join(" AND ")})`)
+      .join(" OR ");
     params = keys.flatMap((k) => splitKey(k));
   } else {
     where = `\`${keyCol}\` IN (${keys.map(() => "?").join(", ")})`;
@@ -491,13 +495,19 @@ export async function getModulePayload(
   const table = ident(spec.table);
   const keyCol = ident(spec.keyCol);
 
-  // PK komposit → WHERE keyCol=? AND keyCol2=? (key = "keyCol_keyCol2").
+  // PK komposit → WHERE keyCol=? AND keyCols[i]=? (key = "keyCol_keyCols…").
   let where = `\`${keyCol}\` = ?`;
   let params: unknown[] = [key];
-  if (spec.keyCol2) {
-    const [k1, k2] = splitKey(key);
-    where = `\`${keyCol}\` = ? AND \`${ident(spec.keyCol2)}\` = ?`;
-    params = [k1, k2];
+  if (spec.keyCols && spec.keyCols.length) {
+    const parts = splitKey(key);
+    const conds = [`\`${keyCol}\` = ?`];
+    const p: unknown[] = [parts[0]];
+    spec.keyCols.forEach((c, i) => {
+      conds.push(`\`${ident(c)}\` = ?`);
+      p.push(parts[i + 1]);
+    });
+    where = conds.join(" AND ");
+    params = p;
   }
 
   const rows = await simgosQuery<Record<string, unknown>>(

@@ -7,6 +7,7 @@ export const ALLOWED_RESOURCES = new Set([
   "Encounter",
   "EpisodeOfCare",
   "Location",
+  "Medication",
   "MedicationRequest",
   "Observation",
   "Organization",

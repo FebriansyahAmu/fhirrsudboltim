@@ -14,6 +14,7 @@ import {
   LuBriefcaseMedical,
   LuBuilding2,
   LuPill,
+  LuTablets,
   LuTriangleAlert,
   LuScan,
   LuFileChartColumn,
@@ -115,6 +116,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     desc: "Data fasilitas & departemen",
     group: "Pasien & Praktisi",
     methods: ["GET", "POST", "PUT", "PATCH"],
+    badge: "Active",
+  },
+  {
+    name: "Medication",
+    path: "/medication",
+    icon: LuTablets,
+    desc: "Definisi obat (KFA)",
+    group: "Obat & Diagnosa",
+    methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
   },
   {

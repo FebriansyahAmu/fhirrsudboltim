@@ -42,11 +42,13 @@ export interface IhsModuleSpec {
   table: string; // tabel staging di `kemkes-ihs`
   keyCol: string; // kunci sumber utama (mis. refId)
   /**
-   * Kolom kunci KEDUA — hanya untuk tabel ber-PK komposit (mis. `observation`
-   * PK = (refId, jenis), di mana refId TIDAK unik). Bila diisi, key baris =
-   * `${keyCol}_${keyCol2}` (mis. "989_5") agar unik untuk React & lookup payload.
+   * Kolom kunci TAMBAHAN — hanya untuk tabel ber-PK komposit di mana keyCol
+   * TIDAK unik (mis. `observation` PK=(refId,jenis); `medication`
+   * PK=(refId,barang,group_racikan)). Bila diisi, key baris = keyCol digabung
+   * semua keyCols dengan "_" (mis. "989_5", "1410…_780_0") agar unik untuk
+   * React & lookup payload. Nilai kolom TIDAK boleh mengandung "_".
    */
-  keyCol2?: string;
+  keyCols?: string[];
   keyLabel: string; // judul kolom kunci
   readyFlag: SyncReadyFlag; // flag "siap kirim"
   orderCol: string; // kolom untuk ORDER BY DESC
@@ -540,7 +542,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     resourceType: "Observation",
     table: "observation",
     keyCol: "refId",
-    keyCol2: "jenis", // PK komposit (refId, jenis) → refId tidak unik.
+    keyCols: ["jenis"], // PK komposit (refId, jenis) → refId tidak unik.
     keyLabel: "No. Observasi",
     readyFlag: "send",
     orderCol: "refId",
@@ -598,7 +600,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     resourceType: "Observation",
     table: "observation_faktor_risiko",
     keyCol: "refId",
-    keyCol2: "jenis", // PK komposit (refId, jenis).
+    keyCols: ["jenis"], // PK komposit (refId, jenis).
     keyLabel: "No. Observasi",
     readyFlag: "send",
     orderCol: "refId",
@@ -629,7 +631,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     resourceType: "Observation",
     table: "observation_nutrisi",
     keyCol: "refId",
-    keyCol2: "jenis", // PK komposit (refId, jenis).
+    keyCols: ["jenis"], // PK komposit (refId, jenis).
     keyLabel: "No. Observasi",
     readyFlag: "send",
     orderCol: "refId",
@@ -901,6 +903,28 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     ],
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // ── Medication (definisi obat / KFA) ──
+  // Resource DEFINITIONAL (obat) — tidak terikat Encounter/pasien, jadi TIDAK
+  // ada dependsOn. PK komposit (refId, barang, group_racikan) → keyCols.
+  medication: {
+    module: "medication",
+    resourceType: "Medication",
+    table: "medication",
+    keyCol: "refId",
+    keyCols: ["barang", "group_racikan"], // PK komposit → refId tidak unik.
+    keyLabel: "Ref Obat",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "code", label: "Obat", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "code", label: "Kode KFA", type: "code", jsonPath: "$.coding[0].code" },
+      { col: "form", label: "Bentuk", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
   },
 };
 

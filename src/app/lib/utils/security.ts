@@ -24,6 +24,7 @@ const CLIENT_ALLOWED_RESOURCES = new Set([
   "Encounter",
   "EpisodeOfCare",
   "Location",
+  "Medication",
   "MedicationRequest",
   "Observation",
   "Organization",

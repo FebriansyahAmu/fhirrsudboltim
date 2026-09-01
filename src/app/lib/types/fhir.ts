@@ -11,6 +11,7 @@ export type FhirResourceType =
   | "Patient"
   | "Practitioner"
   | "Organization"
+  | "Medication"
   | "MedicationRequest"
   | "AllergyIntolerance"
   | "EpisodeOfCare"
@@ -142,6 +143,47 @@ export interface ProcedurePayload {
   reasonCode?: FhirCodeableConcept[];
   bodySite?: FhirCodeableConcept[];
   note?: { text: string }[];
+}
+
+// ─────────────────────────────────────────────
+// Medication (definisi obat / KFA)
+// Ref: https://www.hl7.org/fhir/medication.html
+// ─────────────────────────────────────────────
+
+export type MedicationStatus = "active" | "inactive" | "entered-in-error";
+
+export interface MedicationStrengthValue {
+  value?: number;
+  unit?: string;
+  system?: string;
+  code?: string;
+}
+
+export interface MedicationIngredient {
+  itemCodeableConcept?: FhirCodeableConcept;
+  itemReference?: FhirReference;
+  isActive?: boolean;
+  strength?: {
+    numerator?: MedicationStrengthValue;
+    denominator?: MedicationStrengthValue;
+  };
+}
+
+/**
+ * Payload Medication yang dikirim ke Satu Sehat (profil KFA Kemkes).
+ * Definitional — tidak terikat pasien/kunjungan.
+ */
+export interface MedicationPayload {
+  resourceType: "Medication";
+  id?: string;
+  meta?: { profile?: string[] };
+  identifier?: { system?: string; use?: string; value?: string }[];
+  code: FhirCodeableConcept;
+  status: MedicationStatus;
+  manufacturer?: FhirReference;
+  form?: FhirCodeableConcept;
+  ingredient?: MedicationIngredient[];
+  extension?: unknown[];
 }
 
 export interface FhirOperationOutcome {
