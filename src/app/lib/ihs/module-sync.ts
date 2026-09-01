@@ -142,7 +142,8 @@ function keyDateConds(
   if (!spec.dateKey || spec.dateKey.kind !== "yymmdd-prefix" || !range) {
     return out;
   }
-  const keyCol = ident(spec.keyCol);
+  // Kolom yang di-filter: default keyCol, atau override (mis. "nopen").
+  const keyCol = ident(spec.dateKey.col ?? spec.keyCol);
   const pad = Math.max(0, spec.dateKey.keyLength - 6);
   if (range.from) {
     const p = toYymmdd(range.from);

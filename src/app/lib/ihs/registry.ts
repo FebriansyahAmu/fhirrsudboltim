@@ -69,13 +69,16 @@ export interface IhsModuleSpec {
     nikCol: string; // kolom NIK di staging, mis. "nik"
   };
   /**
-   * Filter tanggal via ENCODING pada keyCol (biasanya PK) — jauh lebih ringan
-   * (range indeks primer) daripada memindai kolom timestamp yang tak ter-index.
-   * `yymmdd-prefix`: keyCol diawali `YYMMDD` (mis. refId encounter `2608310007`).
+   * Filter tanggal via ENCODING `YYMMDD` pada sebuah kolom ter-index — jauh
+   * lebih ringan (range indeks) daripada memindai kolom timestamp tak ter-index.
+   * `yymmdd-prefix`: kolom diawali `YYMMDD` (mis. refId encounter `2608310007`,
+   * atau `nopen` No. Pendaftaran `2608270011`).
    */
   dateKey?: {
     kind: "yymmdd-prefix";
-    keyLength: number; // total panjang keyCol (mis. 10) untuk padding range
+    keyLength: number; // total panjang nilai kolom (mis. 10) untuk padding range
+    /** Kolom yang di-filter. Default: keyCol. Mis. "nopen" bila keyCol bukan tanggal. */
+    col?: string;
   };
   /**
    * Ketergantungan referensi: resource ini butuh resource lain terkirim dulu.
@@ -440,6 +443,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "created", label: "Dibuat", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -459,6 +464,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "created", label: "Dibuat", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 };
