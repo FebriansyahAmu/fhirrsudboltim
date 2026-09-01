@@ -242,9 +242,29 @@ function identPath(p: string): string {
   return p;
 }
 
+/** Ekspresi SELECT untuk satu sumber (kolom mentah atau ekstraksi JSON skalar). */
+function colExpr(col: string, jsonPath?: string): string {
+  return jsonPath
+    ? `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(col)}\`, '${identPath(jsonPath)}'))`
+    : `\`${ident(col)}\``;
+}
+
+/** Key baris (unik). Komposit `${keyCol}_${keyCol2}` bila PK bukan kolom tunggal. */
+function rowKey(spec: IhsModuleSpec, r: Record<string, unknown>): string {
+  const k1 = String(r._key ?? "");
+  return spec.keyCol2 ? `${k1}_${String(r._key2 ?? "")}` : k1;
+}
+
+/** Pecah key komposit "989_5" → ["989", "5"] (split pada "_" pertama). */
+function splitKey(key: string): [string, string] {
+  const i = key.indexOf("_");
+  return i < 0 ? [key, ""] : [key.slice(0, i), key.slice(i + 1)];
+}
+
 /** Daftar kolom SELECT (aliased) untuk satu spec. */
 function buildSelect(spec: IhsModuleSpec): string {
   const select: string[] = [`\`${ident(spec.keyCol)}\` AS _key`, "id AS _id"];
+  if (spec.keyCol2) select.push(`\`${ident(spec.keyCol2)}\` AS _key2`);
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
@@ -253,14 +273,12 @@ function buildSelect(spec: IhsModuleSpec): string {
       `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(spec.dependsOn.refCol)}\`, '${identPath(spec.dependsOn.refPath)}')) AS _depref`,
     );
   spec.columns.forEach((c, i) => {
-    if (c.jsonPath) {
-      // Ekstrak skalar dari kolom JSON server-side → transfer ringan.
-      select.push(
-        `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(c.col)}\`, '${identPath(c.jsonPath)}')) AS \`col_${i}\``,
-      );
-    } else {
-      select.push(`\`${ident(c.col)}\` AS \`col_${i}\``);
-    }
+    // Ekstrak skalar dari kolom JSON server-side → transfer ringan.
+    select.push(`${colExpr(c.col, c.jsonPath)} AS \`col_${i}\``);
+    // Sumber cadangan (mis. Observation.value[x]) — dikomposisi di JS.
+    (c.alt ?? []).forEach((a, j) => {
+      select.push(`${colExpr(a.col, a.jsonPath)} AS \`col_${i}_alt_${j}\``);
+    });
   });
   return select.join(", ");
 }
@@ -276,7 +294,7 @@ async function finalizeRows(
   }
 
   const rows: SyncRow[] = raw.map((r) => ({
-    key: String(r._key ?? ""),
+    key: rowKey(spec, r),
     sent: r._id != null,
     satuSehatId: r._id != null ? String(r._id) : null,
     ready: spec.readyFlag ? toNum(r._ready) === 1 : false,
@@ -289,11 +307,20 @@ async function finalizeRows(
       spec.dependsOn != null &&
       r._id == null &&
       (r._depref == null || r._depref === ""),
-    cells: spec.columns.map((c, i) => ({
-      label: c.label,
-      type: c.type,
-      value: formatCell(r[`col_${i}`], c.type),
-    })),
+    cells: spec.columns.map((c, i) => {
+      // Ambil nilai pertama yang tak-null: primer → cadangan (alt).
+      let raw = r[`col_${i}`];
+      if ((raw == null || raw === "") && c.alt) {
+        for (let j = 0; j < c.alt.length; j++) {
+          const av = r[`col_${i}_alt_${j}`];
+          if (av != null && av !== "") {
+            raw = av;
+            break;
+          }
+        }
+      }
+      return { label: c.label, type: c.type, value: formatCell(raw, c.type) };
+    }),
   }));
 
   // Utamakan "Nama" dari master: staging bisa kosong (skeleton) atau termask.
@@ -339,13 +366,24 @@ export async function getNotedSyncRows(
   if (keys.length === 0) return [];
   const table = ident(spec.table);
   const keyCol = ident(spec.keyCol);
-  const placeholders = keys.map(() => "?").join(", ");
+
+  // PK komposit → cocokkan pasangan (keyCol, keyCol2); selain itu IN biasa.
+  let where: string;
+  let params: unknown[];
+  if (spec.keyCol2) {
+    const kc2 = ident(spec.keyCol2);
+    where = keys.map(() => `(\`${keyCol}\` = ? AND \`${kc2}\` = ?)`).join(" OR ");
+    params = keys.flatMap((k) => splitKey(k));
+  } else {
+    where = `\`${keyCol}\` IN (${keys.map(() => "?").join(", ")})`;
+    params = keys;
+  }
 
   const raw = await simgosQuery<Record<string, unknown>>(
     `SELECT ${buildSelect(spec)}
        FROM \`${SCHEMA}\`.\`${table}\`
-      WHERE \`${keyCol}\` IN (${placeholders})`,
-    keys,
+      WHERE ${where}`,
+    params,
   );
 
   const rows = await finalizeRows(spec, raw);
@@ -453,9 +491,18 @@ export async function getModulePayload(
   const table = ident(spec.table);
   const keyCol = ident(spec.keyCol);
 
+  // PK komposit → WHERE keyCol=? AND keyCol2=? (key = "keyCol_keyCol2").
+  let where = `\`${keyCol}\` = ?`;
+  let params: unknown[] = [key];
+  if (spec.keyCol2) {
+    const [k1, k2] = splitKey(key);
+    where = `\`${keyCol}\` = ? AND \`${ident(spec.keyCol2)}\` = ?`;
+    params = [k1, k2];
+  }
+
   const rows = await simgosQuery<Record<string, unknown>>(
-    `SELECT * FROM \`${SCHEMA}\`.\`${table}\` WHERE \`${keyCol}\` = ? LIMIT 1`,
-    [key],
+    `SELECT * FROM \`${SCHEMA}\`.\`${table}\` WHERE ${where} LIMIT 1`,
+    params,
   );
   const row = rows[0];
   if (!row) return null;

@@ -60,9 +60,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
     icon: LuFlaskConical,
     desc: "Hasil observasi & lab",
     group: "Klinis",
-    methods: ["POST", "GET"],
+    methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
-    hasPage: false,
   },
   {
     name: "Procedure",

@@ -64,6 +64,51 @@ export interface CarePlanPayload {
   author: FhirReference;
 }
 
+// ─────────────────────────────────────────────
+// Observation
+// Ref: https://www.hl7.org/fhir/observation.html
+// ─────────────────────────────────────────────
+
+export type ObservationStatus =
+  | "registered"
+  | "preliminary"
+  | "final"
+  | "amended"
+  | "corrected"
+  | "cancelled"
+  | "entered-in-error"
+  | "unknown";
+
+export interface FhirQuantity {
+  value: number;
+  unit?: string;
+  system?: string;
+  code?: string;
+}
+
+/**
+ * Payload Observation yang dikirim ke Satu Sehat.
+ * value[x] bersifat polimorfik — hanya SATU yang dipakai per resource.
+ */
+export interface ObservationPayload {
+  resourceType: "Observation";
+  id?: string;
+  status: ObservationStatus;
+  category?: { coding: FhirCoding[] }[];
+  code: { coding: FhirCoding[] };
+  subject: FhirReference;
+  encounter?: FhirReference;
+  performer?: FhirReference[];
+  effectiveDateTime?: string;
+  issued?: string;
+  // value[x] — pilih salah satu sesuai jenis observasi.
+  valueQuantity?: FhirQuantity;
+  valueString?: string;
+  valueCodeableConcept?: FhirCodeableConcept;
+  valueBoolean?: boolean;
+  valueInteger?: number;
+}
+
 export interface FhirOperationOutcome {
   resourceType: "OperationOutcome";
   issue: Array<{

@@ -27,6 +27,13 @@ export interface SyncColumn {
    * ringan daripada mentransfer seluruh blob JSON.
    */
   jsonPath?: string;
+  /**
+   * Sumber cadangan bila (col, jsonPath) null — dipakai untuk kolom polimorfik
+   * seperti Observation.value[x] (valueQuantity / valueString /
+   * valueCodeableConcept / valueBoolean). Nilai pertama yang tak-null dipakai.
+   * Dikomposisi di JS (bukan COALESCE SQL) agar aman dari campuran collation.
+   */
+  alt?: { col: string; jsonPath?: string }[];
 }
 
 export interface IhsModuleSpec {
@@ -34,6 +41,12 @@ export interface IhsModuleSpec {
   resourceType: string; // "Patient"
   table: string; // tabel staging di `kemkes-ihs`
   keyCol: string; // kunci sumber utama (mis. refId)
+  /**
+   * Kolom kunci KEDUA — hanya untuk tabel ber-PK komposit (mis. `observation`
+   * PK = (refId, jenis), di mana refId TIDAK unik). Bila diisi, key baris =
+   * `${keyCol}_${keyCol2}` (mis. "989_5") agar unik untuk React & lookup payload.
+   */
+  keyCol2?: string;
   keyLabel: string; // judul kolom kunci
   readyFlag: SyncReadyFlag; // flag "siap kirim"
   orderCol: string; // kolom untuk ORDER BY DESC
@@ -510,6 +523,312 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "status", label: "Status", type: "code" },
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "date", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // ── Observation: satu resource, banyak jenis (tabel berbeda) ──
+  // Semua dikirim dalam konteks kunjungan → butuh encounter.reference
+  // (terbentuk setelah Encounter terkirim) ⇒ dependsOn Encounter.
+  // Kolom "Nilai" polimorfik: valueQuantity.$.value → valueString →
+  // valueCodeableConcept.display → valueBoolean (alt disesuaikan per tabel).
+
+  // Observasi umum / TTV — tabel utama (besar).
+  observation: {
+    module: "observation",
+    resourceType: "Observation",
+    table: "observation",
+    keyCol: "refId",
+    keyCol2: "jenis", // PK komposit (refId, jenis) → refId tidak unik.
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [{ col: "valueString" }],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Anamnesis / riwayat lainnya.
+  "observation-anamnesis": {
+    module: "observation-anamnesis",
+    resourceType: "Observation",
+    table: "observation_anamnesis_riwayat_lainnya",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Faktor risiko.
+  "observation-faktor-risiko": {
+    module: "observation-faktor-risiko",
+    resourceType: "Observation",
+    table: "observation_faktor_risiko",
+    keyCol: "refId",
+    keyCol2: "jenis", // PK komposit (refId, jenis).
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Nutrisi (mis. Body surface area).
+  "observation-nutrisi": {
+    module: "observation-nutrisi",
+    resourceType: "Observation",
+    table: "observation_nutrisi",
+    keyCol: "refId",
+    keyCol2: "jenis", // PK komposit (refId, jenis).
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [{ col: "valueString" }],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Pemeriksaan EKG.
+  "observation-ekg": {
+    module: "observation-ekg",
+    resourceType: "Observation",
+    table: "observation_pemeriksaan_ekg",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian EPFRA.
+  "observation-epfra": {
+    module: "observation-epfra",
+    resourceType: "Observation",
+    table: "observation_penilaian_epfra",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian GRACE risk score.
+  "observation-grace": {
+    module: "observation-grace",
+    resourceType: "Observation",
+    table: "observation_penilaian_grace_risk_skor",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian nyeri (punya valueBoolean).
+  "observation-nyeri": {
+    module: "observation-nyeri",
+    resourceType: "Observation",
+    table: "observation_penilaian_nyeri",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    // valueBoolean tinyint → boolean FHIR (bukan 0/1) saat merakit payload.
+    boolCols: ["valueBoolean"],
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+          { col: "valueBoolean" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian skala Humpty Dumpty (risiko jatuh anak).
+  "observation-humpty-dumpty": {
+    module: "observation-humpty-dumpty",
+    resourceType: "Observation",
+    table: "observation_penilaian_skala_humpty_dumpty",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Penilaian skala Morse (risiko jatuh dewasa).
+  "observation-morse": {
+    module: "observation-morse",
+    resourceType: "Observation",
+    table: "observation_penilaian_skala_morse",
+    keyCol: "refId",
+    keyLabel: "No. Observasi",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Observasi", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "valueQuantity",
+        label: "Nilai",
+        type: "text",
+        jsonPath: "$.value",
+        alt: [
+          { col: "valueString" },
+          { col: "valueCodeableConcept", jsonPath: "$.coding[0].display" },
+        ],
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
     ],
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
