@@ -8,7 +8,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
-import { writeBackPatientIhsId } from "@/app/lib/dal/patient-writeback";
+import {
+  writeBackPatientRecord,
+  nikFromIdentifierParam,
+} from "@/app/lib/dal/patient-writeback";
 import { handleEncounterPostResult } from "@/app/lib/dal/encounter-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
@@ -56,6 +59,29 @@ export async function GET(
     queryParams,
     userId: session.userId,
   });
+
+  // Patient GET by NIK (2xx) → write-back data yang KOSONG di SIMGOS
+  // (id/identifier/meta/name) untuk pasien yang terlanjur dikirim tanpa
+  // dilengkapi. HANYA saat pencarian memang memakai NIK (identifier param),
+  // ditautkan via NIK itu. Kegagalan tak membatalkan response ke client.
+  const knownNik = nikFromIdentifierParam(queryParams.identifier);
+  if (
+    resource === "Patient" &&
+    knownNik &&
+    result.status >= 200 &&
+    result.status < 300
+  ) {
+    try {
+      const wb = await writeBackPatientRecord(result.data, { knownNik });
+      if (wb) {
+        console.log(
+          `[patient GET writeback] nik=${wb.nik} cols=${wb.cols.join("+")} rows=${wb.updated}`,
+        );
+      }
+    } catch (err) {
+      console.error("[patient GET writeback] gagal update SIMGOS patient:", err);
+    }
+  }
 
   return NextResponse.json(result.data, { status: result.status });
 }
@@ -106,27 +132,27 @@ export async function POST(
     userId: session.userId,
   });
 
-  // Write-back IHS id ke SIMGOS untuk Patient yang berhasil dibuat (2xx).
-  // Menautkan baris via NIK & mengisi kolom `id` yang masih kosong. Kegagalan
-  // write-back tidak boleh membatalkan response Satu Sehat ke client.
+  // Write-back data IHS ke SIMGOS untuk Patient yang berhasil dibuat (2xx):
+  // id + identifier + meta + name (kolom yang masih kosong saja). Menautkan
+  // baris via NIK. Kegagalan write-back tidak membatalkan response ke client.
   if (
     resource === "Patient" &&
     result.status >= 200 &&
     result.status < 300
   ) {
     try {
-      const wb = await writeBackPatientIhsId(result.data, payload);
+      const wb = await writeBackPatientRecord(result.data, { requestPayload: payload });
       if (wb) {
         console.log(
-          `[patient writeback] nik=${wb.nik} id=${wb.ihsId} rows=${wb.updated}`,
+          `[patient writeback] nik=${wb.nik} id=${wb.ihsId ?? "-"} cols=${wb.cols.join("+")} rows=${wb.updated}`,
         );
       } else {
         console.warn(
-          "[patient writeback] dilewati: NIK/id tidak dapat diekstrak dari response",
+          "[patient writeback] dilewati: NIK/data tidak dapat diekstrak dari response",
         );
       }
     } catch (err) {
-      console.error("[patient writeback] gagal update SIMGOS patient.id:", err);
+      console.error("[patient writeback] gagal update SIMGOS patient:", err);
     }
   }
 
