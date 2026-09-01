@@ -468,6 +468,52 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
+
+  // ── ClinicalImpression: satu resource, dua jenis (tabel berbeda) ──
+  // Kesan/penilaian klinis dikirim dalam konteks kunjungan → butuh
+  // encounter.reference (terbentuk setelah Encounter terkirim) ⇒ dependsOn Encounter.
+
+  // Anamnesis (riwayat keluhan) — tabel khusus.
+  "clinicalimpression-anamnesis": {
+    module: "clinicalimpression-anamnesis",
+    resourceType: "ClinicalImpression",
+    table: "clinical_impression_anamnesis",
+    keyCol: "refId",
+    keyLabel: "No. Kesan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Penilaian", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "summary", label: "Ringkasan", type: "text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "date", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Diagnosa (kesan/rasional klinis) — tabel khusus.
+  "clinicalimpression-diagnosa": {
+    module: "clinicalimpression-diagnosa",
+    resourceType: "ClinicalImpression",
+    table: "clinical_impression_diagnosa",
+    keyCol: "refId",
+    keyLabel: "No. Kesan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Penilaian", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "summary", label: "Ringkasan", type: "text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "date", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {
