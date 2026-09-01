@@ -29,6 +29,43 @@ import {
 } from "react-icons/lu";
 
 export const FHIR_MODULES: ModuleInfo[] = [
+  // ── Resources - Prerequisites (master data yang harus disiapkan lebih dulu) ──
+  {
+    name: "Organization",
+    path: "/organization",
+    icon: LuBuilding2,
+    desc: "Data fasilitas & departemen",
+    group: "Resources - Prerequisites",
+    methods: ["GET", "POST", "PUT", "PATCH"],
+    badge: "Active",
+  },
+  {
+    name: "Location",
+    path: "/location",
+    icon: LuMapPin,
+    desc: "Lokasi poli & ruangan",
+    group: "Resources - Prerequisites",
+    methods: ["POST", "GET", "PUT", "PATCH"],
+    badge: "Active",
+  },
+  {
+    name: "Practitioner",
+    path: "/practitioner",
+    icon: LuBriefcaseMedical,
+    desc: "Data dokter",
+    group: "Resources - Prerequisites",
+    methods: ["GET"],
+    badge: "Active",
+  },
+  {
+    name: "Patient",
+    path: "/patient",
+    icon: LuUserRound,
+    desc: "Data pasien",
+    group: "Resources - Prerequisites",
+    methods: ["POST", "GET", "PUT", "PATCH"],
+    badge: "Active",
+  },
   {
     name: "CarePlan",
     path: "/careplan",
@@ -81,42 +118,6 @@ export const FHIR_MODULES: ModuleInfo[] = [
     desc: "Kunjungan pasien",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
-    badge: "Active",
-  },
-  {
-    name: "Location",
-    path: "/location",
-    icon: LuMapPin,
-    desc: "Lokasi poli & ruangan",
-    group: "Klinis",
-    methods: ["POST", "GET", "PUT", "PATCH"],
-    badge: "Active",
-  },
-  {
-    name: "Patient",
-    path: "/patient",
-    icon: LuUserRound,
-    desc: "Data pasien",
-    group: "Pasien & Praktisi",
-    methods: ["POST", "GET", "PUT", "PATCH"],
-    badge: "Active",
-  },
-  {
-    name: "Practitioner",
-    path: "/practitioner",
-    icon: LuBriefcaseMedical,
-    desc: "Data dokter",
-    group: "Pasien & Praktisi",
-    methods: ["GET"],
-    badge: "Active",
-  },
-  {
-    name: "Organization",
-    path: "/organization",
-    icon: LuBuilding2,
-    desc: "Data fasilitas & departemen",
-    group: "Pasien & Praktisi",
-    methods: ["GET", "POST", "PUT", "PATCH"],
     badge: "Active",
   },
   {
@@ -239,8 +240,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
 ];
 
 export const MODULE_GROUPS = [
+  "Resources - Prerequisites",
   "Klinis",
-  "Pasien & Praktisi",
   "Obat & Diagnosa",
   "Utilitas",
 ] as const;

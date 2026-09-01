@@ -9,7 +9,6 @@ import {
   LuLayoutDashboard,
   LuDatabase,
   LuStethoscope,
-  LuUsers,
   LuPill,
   LuWrench,
   LuX,
@@ -19,8 +18,8 @@ import type { ModuleGroup } from "@/app/lib/types/api";
 
 // Ikon per grup modul
 const GROUP_ICON: Record<ModuleGroup, IconType> = {
+  "Resources - Prerequisites": LuDatabase,
   Klinis: LuStethoscope,
-  "Pasien & Praktisi": LuUsers,
   "Obat & Diagnosa": LuPill,
   Utilitas: LuWrench,
 };

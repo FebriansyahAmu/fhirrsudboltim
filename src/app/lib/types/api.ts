@@ -41,7 +41,11 @@ export interface ModuleInfo {
   hasPage?: boolean;
 }
 
-export type ModuleGroup = "Klinis" | "Pasien & Praktisi" | "Obat & Diagnosa" | "Utilitas";
+export type ModuleGroup =
+  | "Resources - Prerequisites"
+  | "Klinis"
+  | "Obat & Diagnosa"
+  | "Utilitas";
 
 export interface DashboardStats {
   total: number;

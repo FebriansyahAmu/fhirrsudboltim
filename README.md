@@ -30,20 +30,20 @@ Mendukung autentikasi sesi, log pengiriman, validasi form Yup, dan utilitas DICO
 | Encounter | `/encounter` | POST GET PUT PATCH |
 | EpisodeOfCare | `/episode-of-care` | POST GET PUT PATCH |
 | ImagingStudy | `/imaging-study` | GET |
-| Location | `/location` | POST GET PUT PATCH |
 | QuestionnaireResponse | `/questionnaire-response` | POST GET PUT PATCH |
 | ServiceRequest | `/service-request` | POST GET PUT PATCH |
 | Condition | — | POST GET PUT *(belum ada halaman)* |
 | Observation | — | POST GET *(belum ada halaman)* |
 | Procedure | — | POST GET PUT *(belum ada halaman)* |
 
-### Pasien & Praktisi
+### Resources - Prerequisites
 
 | Modul | Path | Methods |
 |---|---|---|
+| Organization | `/organization` | GET POST PUT PATCH |
+| Location | `/location` | POST GET PUT PATCH |
+| Practitioner | `/practitioner` | GET |
 | Patient | `/patient` | POST GET PUT PATCH |
-| Practitioner | — | POST GET PUT *(belum ada halaman)* |
-| Organization | — | GET *(belum ada halaman)* |
 
 ### Obat & Diagnosa
 
