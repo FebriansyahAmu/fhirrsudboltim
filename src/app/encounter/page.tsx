@@ -154,6 +154,7 @@ export default function EncounterPage() {
           module="encounter"
           title="Data Encounter di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
           defaultOpen
         />
 

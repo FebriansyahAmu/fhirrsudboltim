@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import DateRangePicker from "./DateRangePicker";
 import {
@@ -18,12 +18,14 @@ import {
   LuCopy,
   LuCheck,
   LuX,
+  LuCircleX,
   LuWandSparkles,
   LuStickyNote,
   LuPencil,
   LuTrash2,
   LuUserRoundX,
   LuLayoutList,
+  LuListChecks,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -82,6 +84,8 @@ interface PayloadResponse {
   payload: unknown;
   /** Field wajib yang kosong di sumber (hanya saat source=master). */
   missing?: string[];
+  /** Field yang dilengkapi otomatis server-side (mis. Encounter.participant/DPJP). */
+  enriched?: string[];
 }
 
 type PayloadSource = "staging" | "master";
@@ -133,6 +137,39 @@ const FILTERS: { key: SyncFilter; label: string }[] = [
 
 const PAGE_SIZE = 10;
 
+/** Status satu baris dalam antrian kirim otomatis. */
+type QueueState = "pending" | "sending" | "ok" | "fail";
+
+function QueueStatusBadge({ state }: { state: QueueState }) {
+  if (state === "sending")
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+        <LuRefreshCw className="h-3 w-3 animate-spin" />
+        Mengirim…
+      </span>
+    );
+  if (state === "ok")
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+        <LuCircleCheck className="h-3 w-3" />
+        Terkirim
+      </span>
+    );
+  if (state === "fail")
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700">
+        <LuCircleX className="h-3 w-3" />
+        Gagal
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+      <LuClock className="h-3 w-3" />
+      Antre
+    </span>
+  );
+}
+
 function fmt(n: number) {
   return n.toLocaleString("id-ID");
 }
@@ -148,12 +185,19 @@ export default function ModuleSyncPanel({
   title,
   defaultOpen = false,
   onUsePayload,
+  enableQueue = false,
 }: {
   module: string;
   title?: string;
   defaultOpen?: boolean;
   /** Dipanggil saat user menekan "Autofill ke form" pada modal payload. */
   onUsePayload?: (payload: unknown, resourceType: string) => void;
+  /**
+   * Aktifkan tombol "Kirim Antrian": POST berurutan semua baris HALAMAN ini
+   * yang siap (belum terkirim & tidak menunggu referensi), langsung + write-back
+   * di server. Baris "Menunggu <ref>" & sudah terkirim otomatis dilewati.
+   */
+  enableQueue?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
@@ -172,6 +216,17 @@ export default function ModuleSyncPanel({
   const [payloadLoading, setPayloadLoading] = useState(false);
   const [payloadError, setPayloadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Antrian kirim otomatis (send queue)
+  const [queueRunning, setQueueRunning] = useState(false);
+  const [queueArmed, setQueueArmed] = useState(false);
+  const [queueResults, setQueueResults] = useState<Record<string, QueueState>>({});
+  const [queueSummary, setQueueSummary] = useState<{
+    ok: number;
+    fail: number;
+    total: number;
+  } | null>(null);
+  const queueStopRef = useRef(false);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -380,6 +435,87 @@ export default function ModuleSyncPanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [noteKey]);
 
+  // ── Antrian kirim otomatis ──
+  const stopQueue = useCallback(() => {
+    queueStopRef.current = true;
+  }, []);
+
+  const runQueue = useCallback(async () => {
+    if (!data || queueRunning) return;
+    // Eligible = baris halaman ini yang belum terkirim & TIDAK menunggu
+    // referensi (mis. "Menunggu Patient" dilewati). Data problematik diabaikan.
+    const eligible = data.rows.filter((r) => !r.sent && !r.waitingRef);
+    if (eligible.length === 0) return;
+
+    queueStopRef.current = false;
+    setQueueArmed(false);
+    setQueueRunning(true);
+    setQueueSummary(null);
+    setQueueResults(
+      Object.fromEntries(eligible.map((r) => [r.key, "pending" as QueueState])),
+    );
+
+    let ok = 0;
+    let fail = 0;
+    for (const r of eligible) {
+      if (queueStopRef.current) break;
+      setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
+      try {
+        // 1. Rakit payload dari baris SIMGOS (read-only).
+        const pres = await fetch(
+          `/api/ihs/${module}/${encodeURIComponent(r.key)}`,
+          { credentials: "same-origin" },
+        );
+        const pjson = await pres.json();
+        if (!pres.ok) throw new Error(pjson?.error ?? "payload gagal");
+        const resourceType = String(pjson.resourceType);
+
+        // 2. POST ke Satu Sehat (server melakukan write-back id / catatan gagal).
+        const sres = await fetch(`/api/fhir/${encodeURIComponent(resourceType)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(pjson.payload),
+        });
+        await sres.text().catch(() => null);
+
+        if (sres.ok) {
+          ok++;
+          setQueueResults((s) => ({ ...s, [r.key]: "ok" }));
+        } else {
+          fail++;
+          setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+        }
+      } catch {
+        fail++;
+        setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+      }
+      // Jeda kecil — ramah rate-limit & agar progres terlihat.
+      await new Promise((res) => setTimeout(res, 250));
+    }
+
+    setQueueSummary({ ok, fail, total: eligible.length });
+    setQueueRunning(false);
+    // Muat ulang status otoritatif (terkirim → Terkirim, gagal → catatan kuning).
+    await load(filter, page, noteFilter, dateFrom, dateTo);
+    setQueueResults({});
+  }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo]);
+
+  // Reset kontrol antrian saat pindah filter/halaman/tanggal.
+  useEffect(() => {
+    setQueueArmed(false);
+    setQueueSummary(null);
+    setQueueResults({});
+  }, [filter, page, noteFilter, dateFrom, dateTo]);
+
+  const eligibleCount = data
+    ? data.rows.filter((r) => !r.sent && !r.waitingRef).length
+    : 0;
+  const queueTotal = Object.keys(queueResults).length;
+  const queueDone = Object.values(queueResults).filter(
+    (v) => v === "ok" || v === "fail",
+  ).length;
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
       {/* Header (selalu tampil) */}
@@ -500,7 +636,7 @@ export default function ModuleSyncPanel({
                     onClick={() =>
                       load(filter, page, noteFilter, dateFrom, dateTo)
                     }
-                    disabled={loading}
+                    disabled={loading || queueRunning}
                     className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
                   >
                     <LuRefreshCw
@@ -508,6 +644,64 @@ export default function ModuleSyncPanel({
                     />
                     Muat ulang
                   </button>
+
+                  {/* Kirim Antrian (opsional per modul) */}
+                  {enableQueue &&
+                    (queueRunning ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                          <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Mengirim {queueDone}/{queueTotal}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={stopQueue}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                          Stop
+                        </button>
+                      </div>
+                    ) : queueArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 ring-1 ring-amber-200">
+                        <span className="pl-1 text-[11px] font-semibold text-amber-800">
+                          Kirim {eligibleCount} item?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={runQueue}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-teal-700"
+                        >
+                          <LuSend className="h-3.5 w-3.5" />
+                          Ya, kirim
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQueueArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setQueueArmed(true)}
+                        disabled={loading || eligibleCount === 0}
+                        title={
+                          eligibleCount === 0
+                            ? "Tidak ada baris siap kirim di halaman ini (menunggu referensi & sudah terkirim dilewati)"
+                            : `POST ${eligibleCount} baris halaman ini ke Satu Sehat secara berurutan, langsung write-back`
+                        }
+                        className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition-colors hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuListChecks className="h-3.5 w-3.5" />
+                        Kirim Antrian
+                        <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] tabular-nums">
+                          {eligibleCount}
+                        </span>
+                      </button>
+                    ))}
                 </div>
               </div>
 
@@ -560,6 +754,68 @@ export default function ModuleSyncPanel({
                 )}
               </div>
 
+              {/* Banner antrian kirim */}
+              {enableQueue && (queueRunning || queueSummary) && (
+                <div className="px-4 pb-3">
+                  <div
+                    className={`rounded-xl border px-4 py-3 ${
+                      queueRunning
+                        ? "border-blue-100 bg-blue-50/60"
+                        : queueSummary && queueSummary.fail > 0
+                          ? "border-amber-100 bg-amber-50/60"
+                          : "border-emerald-100 bg-emerald-50/60"
+                    }`}
+                  >
+                    {queueRunning ? (
+                      <div className="space-y-2">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-blue-800">
+                          <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Mengirim antrian… {queueDone}/{queueTotal}
+                        </p>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                          <div
+                            className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                            style={{
+                              width: `${queueTotal ? (queueDone / queueTotal) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : queueSummary ? (
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-xs font-medium text-slate-700">
+                          <span className="font-bold">Antrian selesai.</span>{" "}
+                          <span className="font-semibold text-emerald-700">
+                            {fmt(queueSummary.ok)} terkirim
+                          </span>
+                          {queueSummary.fail > 0 && (
+                            <>
+                              {" · "}
+                              <span className="font-semibold text-amber-700">
+                                {fmt(queueSummary.fail)} gagal (dicatat kuning)
+                              </span>
+                            </>
+                          )}{" "}
+                          dari {fmt(queueSummary.total)} baris. Baris{" "}
+                          <span className="font-semibold">
+                            Menunggu {dependsOnAll ?? "referensi"}
+                          </span>{" "}
+                          &amp; sudah terkirim dilewati.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setQueueSummary(null)}
+                          aria-label="Tutup ringkasan antrian"
+                          className="shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               {/* Tabel */}
               <div className="overflow-x-auto">
                 <table className="w-full min-w-180 text-left text-sm">
@@ -593,6 +849,18 @@ export default function ModuleSyncPanel({
                     ) : data && data.rows.length > 0 ? (
                       data.rows.map((r) => {
                         const noteFor = notesMap[r.key];
+                        const qs = queueResults[r.key];
+                        // Highlight baris berdasarkan status antrian (menang atas tint catatan).
+                        const qRow =
+                          qs === "sending"
+                            ? "bg-blue-50 ring-2 ring-inset ring-blue-300"
+                            : qs === "ok"
+                              ? "bg-emerald-50/70"
+                              : qs === "fail"
+                                ? "bg-red-50/70"
+                                : qs === "pending"
+                                  ? "opacity-55"
+                                  : "";
                         const tint = noteFor?.mark
                           ? (MARK_META[noteFor.mark]?.row ?? "")
                           : r.waitingRef
@@ -603,9 +871,15 @@ export default function ModuleSyncPanel({
                         return (
                         <tr
                           key={r.key}
-                          className={`transition-colors hover:bg-slate-50/60 ${tint}`}
+                          className={`transition-colors hover:bg-slate-50/60 ${qs ? qRow : tint}`}
                         >
                           <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                            {qs === "sending" && (
+                              <span className="relative mr-2 inline-flex h-2 w-2 align-middle">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+                              </span>
+                            )}
                             {r.key}
                           </td>
                           {r.cells.map((cell, i) => (
@@ -619,7 +893,9 @@ export default function ModuleSyncPanel({
                             </td>
                           ))}
                           <td className="px-4 py-2.5">
-                            {r.sent ? (
+                            {qs ? (
+                              <QueueStatusBadge state={qs} />
+                            ) : r.sent ? (
                               <span className="inline-flex items-center gap-1.5">
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
                                   <LuCircleCheck className="h-3 w-3" />
@@ -843,6 +1119,11 @@ export default function ModuleSyncPanel({
                 <p className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700">
                   <LuTriangleAlert className="h-3.5 w-3.5 shrink-0" />
                   Field wajib kosong: {payloadData.missing.join(", ")} — lengkapi di form
+                </p>
+              ) : payloadData?.enriched && payloadData.enriched.length > 0 ? (
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-medium text-teal-700">
+                  <LuWandSparkles className="h-3.5 w-3.5 shrink-0" />
+                  {payloadData.enriched.join(", ")} dilengkapi otomatis dari DPJP (SIMGOS)
                 </p>
               ) : (
                 <p className="text-[11px] text-slate-400">

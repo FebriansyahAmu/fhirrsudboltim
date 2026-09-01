@@ -8,6 +8,7 @@ import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { getModuleSpec } from "@/app/lib/ihs/registry";
 import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
+import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
 
 export async function GET(
   request: NextRequest,
@@ -61,7 +62,25 @@ export async function GET(
     if (!result) {
       return NextResponse.json({ error: "Data tidak ditemukan" }, { status: 404 });
     }
-    return NextResponse.json(result);
+
+    // Encounter: lengkapi participant (DPJP) secara otomatis bila kosong —
+    // profil Satu Sehat mewajibkannya. Resolusi via JOIN bertahap ke SIMGOS
+    // (read-only). Hanya mengisi bila belum ada; tidak menimpa.
+    const enriched: string[] = [];
+    if (spec.module === "encounter") {
+      const payload = result.payload as Record<string, unknown>;
+      const part = payload.participant;
+      const hasPart = Array.isArray(part) && part.length > 0;
+      if (!hasPart) {
+        const participant = await resolveEncounterParticipant(key);
+        if (participant) {
+          payload.participant = participant;
+          enriched.push("participant");
+        }
+      }
+    }
+
+    return NextResponse.json(enriched.length ? { ...result, enriched } : result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gagal membaca data SIMGOS";
     return NextResponse.json({ error: msg }, { status: 502 });
