@@ -833,6 +833,52 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
+
+  // ── Procedure: satu resource, dua jenis (tabel berbeda) ──
+  // Tindakan dikirim dalam konteks kunjungan → butuh encounter.reference
+  // (terbentuk setelah Encounter terkirim) ⇒ dependsOn Encounter.
+
+  // Tindakan umum — tabel utama.
+  procedure: {
+    module: "procedure",
+    resourceType: "Procedure",
+    table: "procedure",
+    keyCol: "refId",
+    keyLabel: "No. Tindakan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Tindakan", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "code", label: "Kode", type: "code", jsonPath: "$.coding[0].code" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "performedPeriod", label: "Waktu", type: "date", jsonPath: "$.start" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Tindakan medis — tabel khusus.
+  "procedure-tindakan-medis": {
+    module: "procedure-tindakan-medis",
+    resourceType: "Procedure",
+    table: "procedure_tindakan_medis",
+    keyCol: "refId",
+    keyLabel: "No. Tindakan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "code", label: "Tindakan", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "code", label: "Kode", type: "code", jsonPath: "$.coding[0].code" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "performedPeriod", label: "Waktu", type: "date", jsonPath: "$.start" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

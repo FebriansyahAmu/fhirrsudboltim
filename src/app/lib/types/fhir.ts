@@ -109,6 +109,41 @@ export interface ObservationPayload {
   valueInteger?: number;
 }
 
+// ─────────────────────────────────────────────
+// Procedure
+// Ref: https://www.hl7.org/fhir/procedure.html
+// ─────────────────────────────────────────────
+
+export type ProcedureStatus =
+  | "preparation"
+  | "in-progress"
+  | "not-done"
+  | "on-hold"
+  | "stopped"
+  | "completed"
+  | "entered-in-error"
+  | "unknown";
+
+/**
+ * Payload Procedure yang dikirim ke Satu Sehat.
+ * Field opsional ditandai "?" sesuai spesifikasi FHIR R4.
+ * (FhirPeriod didefinisikan di bagian EpisodeOfCare — dipakai ulang di sini.)
+ */
+export interface ProcedurePayload {
+  resourceType: "Procedure";
+  id?: string;
+  status: ProcedureStatus;
+  category?: FhirCodeableConcept;
+  code: FhirCodeableConcept;
+  subject: FhirReference;
+  encounter?: FhirReference;
+  performedPeriod?: FhirPeriod;
+  performer?: { actor: FhirReference }[];
+  reasonCode?: FhirCodeableConcept[];
+  bodySite?: FhirCodeableConcept[];
+  note?: { text: string }[];
+}
+
 export interface FhirOperationOutcome {
   resourceType: "OperationOutcome";
   issue: Array<{

@@ -69,9 +69,8 @@ export const FHIR_MODULES: ModuleInfo[] = [
     icon: LuSyringe,
     desc: "Tindakan medis",
     group: "Klinis",
-    methods: ["POST", "GET", "PUT"],
+    methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
-    hasPage: false,
   },
   {
     name: "Encounter",
