@@ -19,7 +19,7 @@
 
 import { useForm, type Resolver } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   encounterFormSchema,
@@ -37,6 +37,9 @@ import { safeJsonParse, safeJsonStringify } from "@/app/lib/utils/security";
 // Props
 // ─────────────────────────────────────────────
 
+/** Payload yang di-autofill dari panel SIMGOS (Raw JSON). */
+type AutofillRaw = { json: string; nonce: number } | null;
+
 interface EncounterFormProps {
   method: HttpMethod;
   loading: boolean;
@@ -45,6 +48,7 @@ interface EncounterFormProps {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => void;
+  autofillRaw?: AutofillRaw;
 }
 
 // ─────────────────────────────────────────────
@@ -299,6 +303,7 @@ function MutationForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: {
   method: HttpMethod;
   loading: boolean;
@@ -306,10 +311,21 @@ function MutationForm({
     payload: EncounterPayload;
     resourceId?: string;
   }) => void;
+  autofillRaw?: AutofillRaw;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+
+  // Autofill dari panel SIMGOS → pindah ke Raw JSON & isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   const needsId = method === "PUT" || method === "PATCH";
 
@@ -920,6 +936,7 @@ export default function EncounterForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: EncounterFormProps) {
   if (method === "GET") {
     return (
@@ -932,6 +949,7 @@ export default function EncounterForm({
       method={method}
       loading={loading}
       onSubmit={(params) => onSubmit(params)}
+      autofillRaw={autofillRaw}
     />
   );
 }

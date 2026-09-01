@@ -8,6 +8,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
+import { writeBackPatientIhsId } from "@/app/lib/dal/patient-writeback";
+import { handleEncounterPostResult } from "@/app/lib/dal/encounter-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -103,6 +105,46 @@ export async function POST(
     payload,
     userId: session.userId,
   });
+
+  // Write-back IHS id ke SIMGOS untuk Patient yang berhasil dibuat (2xx).
+  // Menautkan baris via NIK & mengisi kolom `id` yang masih kosong. Kegagalan
+  // write-back tidak boleh membatalkan response Satu Sehat ke client.
+  if (
+    resource === "Patient" &&
+    result.status >= 200 &&
+    result.status < 300
+  ) {
+    try {
+      const wb = await writeBackPatientIhsId(result.data, payload);
+      if (wb) {
+        console.log(
+          `[patient writeback] nik=${wb.nik} id=${wb.ihsId} rows=${wb.updated}`,
+        );
+      } else {
+        console.warn(
+          "[patient writeback] dilewati: NIK/id tidak dapat diekstrak dari response",
+        );
+      }
+    } catch (err) {
+      console.error("[patient writeback] gagal update SIMGOS patient.id:", err);
+    }
+  }
+
+  // Encounter: write-back id ke SIMGOS bila sukses (2xx), atau catatan
+  // "kuning" (warning) di DB kita bila gagal (4xx/5xx). Ditautkan via refId
+  // (= identifier[0].value). Kegagalan proses ini tidak membatalkan response.
+  if (resource === "Encounter") {
+    try {
+      await handleEncounterPostResult({
+        status: result.status,
+        responseData: result.data,
+        requestPayload: payload,
+        userId: session.userId,
+      });
+    } catch (err) {
+      console.error("[encounter] gagal memproses hasil POST:", err);
+    }
+  }
 
   return NextResponse.json(result.data, { status: result.status });
 }
