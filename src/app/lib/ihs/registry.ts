@@ -413,6 +413,54 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     ],
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
+
+  // ── CarePlan: satu resource, dua jenis (tabel berbeda) ──
+  // CarePlan dikirim dalam konteks kunjungan → butuh encounter.reference
+  // (baru terbentuk setelah Encounter terkirim) ⇒ dependsOn Encounter.
+
+  // Rencana Perawatan — tabel utama.
+  careplan: {
+    module: "careplan",
+    resourceType: "CarePlan",
+    table: "care_plan",
+    keyCol: "refId",
+    keyLabel: "No. Rencana",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "title", label: "Rencana", type: "text" },
+      {
+        col: "category",
+        label: "Kategori",
+        type: "text",
+        jsonPath: "$[0].coding[0].display",
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "created", label: "Dibuat", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
+
+  // Rencana Kontrol (jadwal kontrol ulang) — tabel khusus.
+  "careplan-jadwal": {
+    module: "careplan-jadwal",
+    resourceType: "CarePlan",
+    table: "care_plan_jadwal_kontrol",
+    keyCol: "refId",
+    keyLabel: "No. Rencana",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "title", label: "Rencana Kontrol", type: "text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "created", label: "Dibuat", type: "date" },
+    ],
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

@@ -12,8 +12,11 @@ import {
 } from "@/app/lib/schemas/careplan.schemas";
 import type { CarePlanPayload } from "@/app/lib/types/fhir";
 import type { HttpMethod } from "@/app/lib/types/api";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { safeJsonParse, safeJsonStringify } from "@/app/lib/utils/security";
+
+/** Payload yang di-autofill dari panel SIMGOS (Raw JSON). */
+type AutofillRaw = { json: string; nonce: number } | null;
 
 interface CarePlanFormProps {
   method: HttpMethod;
@@ -23,6 +26,8 @@ interface CarePlanFormProps {
     queryParams?: Record<string, string | undefined>;
   }) => void;
   loading: boolean;
+  /** Bila di-set (nonce berubah), form beralih ke Raw JSON & terisi payload. */
+  autofillRaw?: AutofillRaw;
 }
 
 // ─────────────────────────────────────────────
@@ -204,14 +209,26 @@ function MutationForm({
   method,
   onSubmit,
   loading,
+  autofillRaw,
 }: {
   method: HttpMethod;
   onSubmit: (params: { payload: CarePlanPayload; resourceId?: string }) => void;
   loading: boolean;
+  autofillRaw?: AutofillRaw;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+
+  // Autofill dari panel SIMGOS → pindah ke Raw JSON & isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   const needsId = method === "PUT" || method === "PATCH";
 
@@ -712,6 +729,7 @@ export default function CarePlanForm({
   method,
   onSubmit,
   loading,
+  autofillRaw,
 }: CarePlanFormProps) {
   if (method === "GET") {
     return (
@@ -724,6 +742,7 @@ export default function CarePlanForm({
       method={method}
       loading={loading}
       onSubmit={(params) => onSubmit(params)}
+      autofillRaw={autofillRaw}
     />
   );
 }
