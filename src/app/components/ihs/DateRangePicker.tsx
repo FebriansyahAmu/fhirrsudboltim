@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   LuCalendarDays,
   LuChevronLeft,
@@ -42,6 +43,10 @@ const MONTHS = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ];
 
+// Perkiraan ukuran popover (untuk penempatan & flip ke atas bila mepet bawah).
+const POP_W = 288; // w-72
+const POP_H = 360;
+
 interface Preset {
   label: string;
   range: () => [string, string];
@@ -82,7 +87,12 @@ export default function DateRangePicker({
   onChange: (from: string | null, to: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const ref = useRef<HTMLDivElement>(null); // pembungkus tombol (anchor)
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  // Posisi popover (fixed) — dihitung dari rect tombol; null = belum siap.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
   const anchor = parse(to) ?? parse(from) ?? new Date();
   const [view, setView] = useState<{ y: number; m: number }>({
@@ -90,11 +100,43 @@ export default function DateRangePicker({
     m: anchor.getMonth(),
   });
 
-  // Tutup saat klik di luar / Escape
+  useEffect(() => setMounted(true), []);
+
+  // Hitung posisi popover terhadap viewport; ikuti scroll/resize saat terbuka.
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const compute = () => {
+      const b = btnRef.current;
+      if (!b) return;
+      const r = b.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUp = spaceBelow < POP_H + 16 && r.top > POP_H + 16;
+      const top = openUp ? Math.max(8, r.top - 8 - POP_H) : r.bottom + 8;
+      // Right-align ke tombol, tapi jaga agar tak keluar tepi kiri/kanan.
+      let right = Math.max(8, window.innerWidth - r.right);
+      right = Math.min(right, Math.max(8, window.innerWidth - POP_W - 8));
+      setPos({ top, right });
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true); // capture: scroll di ancestor mana pun
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [open]);
+
+  // Tutup saat klik di luar (tombol ATAU popover) / Escape.
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", onDoc);
@@ -155,9 +197,107 @@ export default function DateRangePicker({
 
   const todayStr = fmt(new Date());
 
+  const popover = (
+    <div
+      ref={popRef}
+      style={{ position: "fixed", top: pos?.top, right: pos?.right }}
+      className="z-50 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl"
+    >
+      {/* Presets */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => applyPreset(p)}
+            className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-teal-50 hover:text-teal-700"
+          >
+            {p.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange(null, null)}
+          className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+        >
+          Reset
+        </button>
+      </div>
+
+      {/* Nav bulan */}
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() =>
+            setView((v) =>
+              v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 },
+            )
+          }
+          className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          <LuChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="text-xs font-bold text-slate-700">
+          {MONTHS[view.m]} {view.y}
+        </span>
+        <button
+          type="button"
+          onClick={() =>
+            setView((v) =>
+              v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 },
+            )
+          }
+          className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          <LuChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Kalender */}
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {WEEKDAYS.map((w) => (
+          <div key={w} className="py-1 text-[10px] font-semibold text-slate-400">
+            {w}
+          </div>
+        ))}
+        {grid.map((d, i) => {
+          if (!d) return <div key={i} />;
+          const pos2 = inRange(d);
+          const isToday = fmt(d) === todayStr;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => pickDay(d)}
+              className={`relative h-8 rounded-lg text-xs font-medium transition-colors ${
+                pos2 === "from" || pos2 === "to"
+                  ? "bg-teal-600 text-white"
+                  : pos2 === "mid"
+                    ? "bg-teal-50 text-teal-700"
+                    : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {d.getDate()}
+              {isToday && !pos2 && (
+                <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-teal-500" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {from && !to && (
+        <p className="mt-2 text-center text-[11px] text-slate-400">
+          Pilih tanggal akhir (atau tutup untuk “sejak {labelId(from)}”)
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -184,98 +324,8 @@ export default function DateRangePicker({
         )}
       </button>
 
-      {open && (
-        <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-          {/* Presets */}
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => applyPreset(p)}
-                className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-teal-50 hover:text-teal-700"
-              >
-                {p.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => onChange(null, null)}
-              className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-            >
-              Reset
-            </button>
-          </div>
-
-          {/* Nav bulan */}
-          <div className="mb-2 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() =>
-                setView((v) =>
-                  v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 },
-                )
-              }
-              className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            >
-              <LuChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-xs font-bold text-slate-700">
-              {MONTHS[view.m]} {view.y}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setView((v) =>
-                  v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 },
-                )
-              }
-              className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            >
-              <LuChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Kalender */}
-          <div className="grid grid-cols-7 gap-0.5 text-center">
-            {WEEKDAYS.map((w) => (
-              <div key={w} className="py-1 text-[10px] font-semibold text-slate-400">
-                {w}
-              </div>
-            ))}
-            {grid.map((d, i) => {
-              if (!d) return <div key={i} />;
-              const pos = inRange(d);
-              const isToday = fmt(d) === todayStr;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => pickDay(d)}
-                  className={`relative h-8 rounded-lg text-xs font-medium transition-colors ${
-                    pos === "from" || pos === "to"
-                      ? "bg-teal-600 text-white"
-                      : pos === "mid"
-                        ? "bg-teal-50 text-teal-700"
-                        : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  {d.getDate()}
-                  {isToday && !pos && (
-                    <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-teal-500" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {from && !to && (
-            <p className="mt-2 text-center text-[11px] text-slate-400">
-              Pilih tanggal akhir (atau tutup untuk “sejak {labelId(from)}”)
-            </p>
-          )}
-        </div>
-      )}
+      {/* Popover di-portal ke body + posisi fixed → tak terpotong overflow card. */}
+      {open && mounted && pos && createPortal(popover, document.body)}
     </div>
   );
 }
