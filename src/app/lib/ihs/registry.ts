@@ -879,6 +879,29 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
+
+  // ── QuestionnaireResponse (pengkajian resep Q0007) ──
+  // Dikirim dalam konteks kunjungan → butuh encounter.reference
+  // (terbentuk setelah Encounter terkirim) ⇒ dependsOn Encounter.
+  "questionnaire-response": {
+    module: "questionnaire-response",
+    resourceType: "QuestionnaireResponse",
+    table: "questionnaire_response",
+    keyCol: "refId",
+    keyLabel: "No. Kuesioner",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "questionnaire", label: "Kuesioner", type: "code" },
+      { col: "author", label: "Petugas", type: "text", jsonPath: "$.display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "authored", label: "Diisi", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

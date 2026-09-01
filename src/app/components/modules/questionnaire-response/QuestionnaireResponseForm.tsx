@@ -18,7 +18,10 @@
 
 import { useForm, Controller, type Resolver } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+/** Payload yang di-autofill dari panel SIMGOS (Raw JSON). */
+type AutofillRaw = { json: string; nonce: number } | null;
 
 import {
   questionnaireResponseFormSchema,
@@ -71,6 +74,8 @@ interface QuestionnaireResponseFormProps {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => void;
+  /** Bila di-set (nonce berubah), form beralih ke Raw JSON & terisi payload. */
+  autofillRaw?: AutofillRaw;
 }
 
 // ─────────────────────────────────────────────
@@ -496,6 +501,7 @@ function MutationForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: {
   method: HttpMethod;
   loading: boolean;
@@ -503,10 +509,21 @@ function MutationForm({
     payload: QuestionnaireResponsePayload;
     resourceId?: string;
   }) => void;
+  autofillRaw?: AutofillRaw;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [rawJson, setRawJson] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
+
+  // Autofill dari panel SIMGOS → pindah ke Raw JSON & isi payload.
+  useEffect(() => {
+    if (autofillRaw && autofillRaw.json) {
+      setMode("raw");
+      setRawJson(autofillRaw.json);
+      setRawError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRaw?.nonce]);
 
   const needsId = method === "PUT" || method === "PATCH";
 
@@ -1126,6 +1143,7 @@ export default function QuestionnaireResponseForm({
   method,
   loading,
   onSubmit,
+  autofillRaw,
 }: QuestionnaireResponseFormProps) {
   if (method === "GET") {
     return <GetForm loading={loading} onSubmit={(p) => onSubmit(p)} />;
@@ -1135,6 +1153,7 @@ export default function QuestionnaireResponseForm({
       method={method}
       loading={loading}
       onSubmit={(p) => onSubmit(p)}
+      autofillRaw={autofillRaw}
     />
   );
 }
