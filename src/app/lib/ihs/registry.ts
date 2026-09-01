@@ -972,6 +972,49 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
     ],
   },
+
+  // ── MedicationDispense (penyerahan obat) ──
+  // Butuh TIGA referensi: Medication, Encounter (kolom `context`), dan
+  // MedicationRequest (authorizingPrescription — resep harus terkirim dulu).
+  // Tabel SIMGOS: `medication_dispanse` (ejaan apa adanya di DB).
+  // PK komposit (refId, barang, group_racikan) → keyCols.
+  "medication-dispense": {
+    module: "medication-dispense",
+    resourceType: "MedicationDispense",
+    table: "medication_dispanse",
+    keyCol: "refId",
+    keyCols: ["barang", "group_racikan"],
+    keyLabel: "No. Penyerahan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      {
+        col: "medicationReference",
+        label: "Obat",
+        type: "text",
+        jsonPath: "$.display",
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "whenHandedOver", label: "Diserahkan", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    // Tiga dependensi — Medication, Encounter (context), MedicationRequest.
+    dependsOn: [
+      {
+        refCol: "medicationReference",
+        refPath: "$.reference",
+        label: "Medication",
+      },
+      { refCol: "context", refPath: "$.reference", label: "Encounter" },
+      {
+        refCol: "authorizingPrescription",
+        refPath: "$[0].reference",
+        label: "MedicationRequest",
+      },
+    ],
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

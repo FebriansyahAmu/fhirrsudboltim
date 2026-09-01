@@ -13,6 +13,7 @@ export type FhirResourceType =
   | "Organization"
   | "Medication"
   | "MedicationRequest"
+  | "MedicationDispense"
   | "AllergyIntolerance"
   | "EpisodeOfCare"
   | "DiagnosticReport"
@@ -233,6 +234,46 @@ export interface MedicationRequestPayload {
   courseOfTherapyType?: FhirCodeableConcept;
   dosageInstruction?: unknown[];
   dispenseRequest?: unknown;
+}
+
+// ─────────────────────────────────────────────
+// MedicationDispense (penyerahan obat)
+// Ref: https://www.hl7.org/fhir/medicationdispense.html
+// ─────────────────────────────────────────────
+
+export type MedicationDispenseStatus =
+  | "preparation"
+  | "in-progress"
+  | "cancelled"
+  | "on-hold"
+  | "completed"
+  | "entered-in-error"
+  | "stopped"
+  | "declined"
+  | "unknown";
+
+/**
+ * Payload MedicationDispense yang dikirim ke Satu Sehat.
+ * Butuh medicationReference (Medication), context (Encounter), dan
+ * authorizingPrescription (MedicationRequest). Bagian kompleks longgar.
+ */
+export interface MedicationDispensePayload {
+  resourceType: "MedicationDispense";
+  id?: string;
+  identifier?: { system?: string; use?: string; value?: string }[];
+  status: MedicationDispenseStatus;
+  category?: FhirCodeableConcept;
+  medicationReference: FhirReference;
+  subject: FhirReference;
+  context?: FhirReference;
+  performer?: { actor: FhirReference }[];
+  location?: FhirReference;
+  authorizingPrescription?: FhirReference[];
+  quantity?: FhirQuantity;
+  daysSupply?: FhirQuantity;
+  whenPrepared?: string;
+  whenHandedOver?: string;
+  dosageInstruction?: unknown[];
 }
 
 export interface FhirOperationOutcome {

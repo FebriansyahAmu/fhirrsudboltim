@@ -78,6 +78,7 @@ const MODULE_ACCENT: Record<string, { from: string; border: string }> = {
   Organization: { from: "from-sky-50", border: "border-sky-100" },
   Medication: { from: "from-emerald-50", border: "border-emerald-100" },
   MedicationRequest: { from: "from-lime-50", border: "border-lime-100" },
+  MedicationDispense: { from: "from-green-50", border: "border-green-100" },
   AllergyIntolerance: { from: "from-yellow-50", border: "border-yellow-100" },
   DiagnosticReport: { from: "from-fuchsia-50", border: "border-fuchsia-100" },
   ServiceRequest: { from: "from-purple-50", border: "border-purple-100" },
