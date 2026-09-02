@@ -3,13 +3,16 @@
 // Koneksi ke database SIMGOS (`kemkes-ihs` dkk).
 //
 // 🔒 KEBIJAKAN: koneksi ini PADA DASARNYA read-only. `simgosQuery`
-//    dipakai untuk baca (SELECT / WITH / SHOW). SATU pengecualian
-//    tulis diizinkan lewat `simgosExecute`: perintah UPDATE saja —
-//    dipakai untuk write-back IHS `id` ke tabel `patient` setelah
-//    POST /Patient ke Satu Sehat berhasil. INSERT / DELETE / DDL
-//    (DROP/ALTER/TRUNCATE/REPLACE, dll.) TETAP DITOLAK sebagai
-//    pertahanan berlapis, dan `multipleStatements:false` mencegah
-//    stacked queries.
+//    dipakai untuk baca (SELECT / WITH / SHOW). DUA pengecualian tulis
+//    yang tersanksi:
+//      1. `simgosExecute` — UPDATE saja (write-back IHS `id`).
+//      2. `simgosInsertEncounterRefId` — INSERT `encounter(refId)` saja,
+//         statement DIKUNCI (konstanta), untuk membuat Encounter ranap
+//         yang di-skip ETL SIMGOS; trigger membangun sisa kolomnya.
+//    Selain kedua fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
+//    TRUNCATE/REPLACE, dll.) TETAP DITOLAK oleh `assertAllowedStatement`
+//    sebagai pertahanan berlapis, dan `multipleStatements:false`
+//    mencegah stacked queries.
 //
 // Sumber koneksi: env DATABASE_URL_SIMGOS.
 // ─────────────────────────────────────────────────────────────
@@ -102,6 +105,34 @@ export async function simgosExecute(
   const conn = await pool.getConnection();
   try {
     const res = await conn.query(sql, params);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Tulis TERSANKSI ke-2: buat baris Encounter di staging hanya dgn `refId`.
+ * Trigger SIMGOS `encounter_before_insert` membangun seluruh kolom (class,
+ * subject, period, participant, dst.) dari refId — sama seperti ETL bawaan
+ * (`pendaftaranToEncounter`). Dipakai untuk MEMBUAT Encounter rawat-inap yang
+ * di-skip ETL karena `PENDAFTARAN_MASUK_NOMOR` terisi (IGD→ranap) sehingga
+ * jenis kunjungan EMER & IMP masing-masing punya Encounter sendiri.
+ *
+ * Statement DIKUNCI (konstanta, satu kolom, parameterized) → tidak melewati
+ * jalur SQL dinamis. INSERT sembarang tetap ditolak.
+ */
+export async function simgosInsertEncounterRefId(refId: string): Promise<number> {
+  if (!/^\d{10}$/.test(refId)) {
+    throw new Error("refId Encounter tidak valid untuk INSERT");
+  }
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    const res = await conn.query(
+      "INSERT INTO `kemkes-ihs`.`encounter` (`refId`) VALUES (?)",
+      [refId],
+    );
     return Number((res as { affectedRows?: number }).affectedRows ?? 0);
   } finally {
     conn.release();

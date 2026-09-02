@@ -10,6 +10,26 @@ import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
 import { resolveEncounterSubject } from "@/app/lib/ihs/encounter-subject";
+import { resolveEncounterRefByNopen } from "@/app/lib/ihs/encounter-ref";
+import type { DependsRef } from "@/app/lib/ihs/registry";
+
+/** Referensi (string) pada payload utk sebuah dependensi; null bila kosong. */
+function readRef(payload: Record<string, unknown>, dep: DependsRef): string | null {
+  const val = payload[dep.refCol];
+  if (!val || typeof val !== "object") return null;
+  const isArr = dep.refPath.startsWith("$[");
+  const obj = isArr ? (Array.isArray(val) ? val[0] : null) : val;
+  if (!obj || typeof obj !== "object") return null;
+  const ref = (obj as Record<string, unknown>).reference;
+  return typeof ref === "string" && ref.trim() ? ref : null;
+}
+
+/** Set referensi Encounter pada payload sesuai bentuk path (objek / array). */
+function writeRef(payload: Record<string, unknown>, dep: DependsRef, ref: string): void {
+  payload[dep.refCol] = dep.refPath.startsWith("$[")
+    ? [{ reference: ref }]
+    : { reference: ref };
+}
 
 export async function GET(
   request: NextRequest,
@@ -94,6 +114,28 @@ export async function GET(
         if (participant) {
           payload.participant = participant;
           enriched.push("participant");
+        }
+      }
+    }
+
+    // Data klinis dependen-Encounter dgn referensi Encounter YATIM: resolusi
+    // Encounter MILIK nopen-nya (mis. Encounter ranap yg sudah dibuat & dikirim)
+    // dan isikan agar bisa dikirim. Tidak menimpa yg sudah ada.
+    const encDeps = (
+      Array.isArray(spec.dependsOn)
+        ? spec.dependsOn
+        : spec.dependsOn
+          ? [spec.dependsOn]
+          : []
+    ).filter((d) => d.label === "Encounter");
+    if (encDeps.length > 0 && result.nopen) {
+      const payload = result.payload as Record<string, unknown>;
+      for (const dep of encDeps) {
+        if (readRef(payload, dep)) continue; // sudah ada, jangan timpa
+        const encRef = await resolveEncounterRefByNopen(result.nopen);
+        if (encRef) {
+          writeRef(payload, dep, encRef);
+          if (!enriched.includes("encounter")) enriched.push("encounter");
         }
       }
     }

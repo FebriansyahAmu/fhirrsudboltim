@@ -18,6 +18,7 @@ import EncounterForm from "@/app/components/modules/encounter/EncounterForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
 import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
+import MissingRanapEncounters from "@/app/components/ihs/MissingRanapEncounters";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { EncounterPayload } from "@/app/lib/types/fhir";
@@ -148,6 +149,9 @@ export default function EncounterPage() {
             Development
           </span>
         </div>
+
+        {/* ── Rawat inap tanpa Encounter (buat Encounter IMP yg di-skip ETL) ── */}
+        <MissingRanapEncounters />
 
         {/* ── SIMGOS: status kirim (read-only, filter tanggal, autofill) ── */}
         <ModuleSyncPanel

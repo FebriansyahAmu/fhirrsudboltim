@@ -12,6 +12,7 @@ import {
   resolveEncounterSubjectsByNopen,
   resolveEncounterPatientHintsByNopen,
 } from "./encounter-subject";
+import { resolveEncounterRefsByNopen } from "./encounter-ref";
 import type { DependsRef, IhsModuleSpec, SyncCellType } from "./registry";
 
 /** Normalisasi dependsOn (satu objek atau array) → array. */
@@ -23,6 +24,11 @@ function depsOf(spec: IhsModuleSpec): DependsRef[] {
 /** Label semua referensi dependensi (untuk header panel). */
 export function dependsLabels(spec: IhsModuleSpec): string[] {
   return depsOf(spec).map((d) => d.label);
+}
+
+/** Apakah modul ini bergantung pada Encounter (punya dependsOn berlabel "Encounter"). */
+function hasEncounterDep(spec: IhsModuleSpec): boolean {
+  return depsOf(spec).some((d) => d.label === "Encounter");
 }
 
 const SCHEMA = "kemkes-ihs";
@@ -373,6 +379,10 @@ function buildSelect(spec: IhsModuleSpec): string {
   if (spec.readyFlag) select.push(`\`${ident(spec.readyFlag)}\` AS _ready`);
   if (spec.attemptMatch)
     select.push(`\`${ident(spec.attemptMatch.nikCol)}\` AS _nik`);
+  // Modul dependen-Encounter selalu punya kolom `nopen` (No. Pendaftaran) →
+  // dipakai resolusi Encounter asal utk data klinis ranap yg encounter-ref-nya
+  // kosong (lihat enrichOriginEncounter / encounter-origin.ts).
+  if (hasEncounterDep(spec)) select.push("`nopen` AS _nopen");
   depsOf(spec).forEach((d, i) =>
     select.push(
       `JSON_UNQUOTE(JSON_EXTRACT(\`${ident(d.refCol)}\`, '${identPath(d.refPath)}')) AS _depref${i}`,
@@ -447,7 +457,44 @@ async function finalizeRows(
   // Encounter: baris yang MASIH Menunggu Patient → lampirkan petunjuk (nama +
   // NIK dari master) untuk tooltip. Tidak mengisi kolom Pasien.
   await enrichEncounterWaitingHint(spec, rows);
+  // Data klinis dependen-Encounter yg encounter-ref-nya yatim → resolusi
+  // Encounter MILIK NOPEN-nya; bila sudah terkirim, lepas "Menunggu Encounter".
+  await enrichClinicalEncounterRef(spec, rows, raw);
   return rows;
+}
+
+/**
+ * Untuk modul dependen-Encounter: baris yang tampak "Menunggu Encounter"
+ * (encounter.reference kosong) padahal Encounter MILIK nopen-nya sudah terkirim
+ * (mis. Encounter ranap yang baru dibuat lalu dikirim). Resolusi via `nopen`
+ * (batch) dan lepas status menunggu supaya baris bisa dikirim (payload-nya
+ * di-enrich saat rakit — lihat route [key]). Read-only. `raw` sejajar `rows`.
+ */
+async function enrichClinicalEncounterRef(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+  raw: Record<string, unknown>[],
+): Promise<void> {
+  if (!hasEncounterDep(spec)) return;
+
+  const targets: { row: SyncRow; nopen: string }[] = [];
+  rows.forEach((r, i) => {
+    if (r.sent || !r.waitingFor.includes("Encounter")) return;
+    const nopenRaw = raw[i]?._nopen;
+    const nopen = nopenRaw == null ? "" : String(nopenRaw);
+    if (/^\d+$/.test(nopen)) targets.push({ row: r, nopen });
+  });
+  if (targets.length === 0) return;
+
+  const refMap = await resolveEncounterRefsByNopen(targets.map((t) => t.nopen));
+  if (refMap.size === 0) return;
+
+  for (const { row, nopen } of targets) {
+    if (!refMap.has(nopen)) continue;
+    // Encounter milik nopen sudah terkirim → tak lagi menunggu Encounter.
+    row.waitingFor = row.waitingFor.filter((l) => l !== "Encounter");
+    row.waitingRef = row.waitingFor.length > 0;
+  }
 }
 
 /**
@@ -678,7 +725,11 @@ function fmtDateVal(d: Date): string {
 export async function getModulePayload(
   spec: IhsModuleSpec,
   key: string,
-): Promise<{ resourceType: string; payload: Record<string, unknown> } | null> {
+): Promise<{
+  resourceType: string;
+  payload: Record<string, unknown>;
+  nopen: string | null;
+} | null> {
   const table = ident(spec.table);
   const keyCol = ident(spec.keyCol);
 
@@ -718,5 +769,6 @@ export async function getModulePayload(
     else payload[col] = val;
   }
 
-  return { resourceType: spec.resourceType, payload };
+  const nopen = row.nopen == null ? null : String(row.nopen);
+  return { resourceType: spec.resourceType, payload, nopen };
 }

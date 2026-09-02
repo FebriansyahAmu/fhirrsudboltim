@@ -36,6 +36,7 @@ type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
 const ENRICHED_LABEL: Record<string, string> = {
   subject: "Pasien (subject)",
   participant: "DPJP (participant)",
+  encounter: "Encounter (ranap)",
 };
 
 interface Cell {
