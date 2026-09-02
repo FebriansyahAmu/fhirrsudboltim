@@ -9,8 +9,12 @@ import { getModuleSpec } from "@/app/lib/ihs/registry";
 import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
-import { resolveEncounterSubject } from "@/app/lib/ihs/encounter-subject";
+import {
+  resolveEncounterSubject,
+  resolvePatientRefByNopen,
+} from "@/app/lib/ihs/encounter-subject";
 import { resolveEncounterRefByNopen } from "@/app/lib/ihs/encounter-ref";
+import { subjectRefOf } from "@/app/lib/ihs/registry";
 import type { DependsRef } from "@/app/lib/ihs/registry";
 
 /** Referensi (string) pada payload utk sebuah dependensi; null bila kosong. */
@@ -136,6 +140,29 @@ export async function GET(
         if (encRef) {
           writeRef(payload, dep, encRef);
           if (!enriched.includes("encounter")) enriched.push("encounter");
+        }
+      }
+    }
+
+    // Subject (Pasien) untuk resource klinis: kolom `subject`/`patient` bisa
+    // BASI (null) bila Patient di-POST setelah baris klinis dibuat (trigger
+    // memateralisasi subject hanya saat itu). Tanpa ini Satu Sehat menolak
+    // ("Reference is mandatory : <Resource>.subject"). Resolusi live via
+    // nopen → Patient/<id> (+display). Tidak menimpa; hanya bila kosong &
+    // pasien sudah punya IHS id (kalau belum, biarkan → baris tetap menunggu).
+    const subjRefSpec = subjectRefOf(spec);
+    if (spec.module !== "encounter" && subjRefSpec && result.nopen) {
+      const payload = result.payload as Record<string, unknown>;
+      if (!readRef(payload, subjRefSpec)) {
+        const subject = await resolvePatientRefByNopen(result.nopen);
+        if (subject) {
+          // Tulis objek subject PENUH ({reference, display}) — bukan hanya ref.
+          payload[subjRefSpec.refCol] = subjRefSpec.refPath.startsWith("$[")
+            ? [subject]
+            : subject;
+          if (!enriched.includes(subjRefSpec.refCol)) {
+            enriched.push(subjRefSpec.refCol);
+          }
         }
       }
     }

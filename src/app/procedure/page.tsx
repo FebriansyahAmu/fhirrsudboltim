@@ -72,6 +72,7 @@ export default function ProcedurePage() {
     nonce: number;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  const sourceRef = useRef<{ module: string; key: string } | null>(null);
 
   const { apiResponse, sendRequest, resetResponse } = useApiRequest({
     resourceType: "Procedure",
@@ -83,7 +84,12 @@ export default function ProcedurePage() {
   };
 
   // Autofill payload dari panel SIMGOS → mode POST + Raw JSON, lalu scroll ke form.
-  const handleUsePayload = (payload: unknown) => {
+  const handleUsePayload = (
+    payload: unknown,
+    _resourceType?: string,
+    source?: { module: string; key: string },
+  ) => {
+    sourceRef.current = source ?? null;
     setActiveMethod("POST");
     resetResponse();
     setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
@@ -102,7 +108,14 @@ export default function ProcedurePage() {
       method: activeMethod,
       payload: params.payload,
       resourceId: params.resourceId,
-      queryParams: params.queryParams,
+      queryParams:
+        activeMethod === "POST" && sourceRef.current
+          ? {
+              ...params.queryParams,
+              module: sourceRef.current.module,
+              key: sourceRef.current.key,
+            }
+          : params.queryParams,
     });
   };
 

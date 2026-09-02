@@ -58,6 +58,9 @@ export default function CarePlanPage() {
     nonce: number;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  // Identitas baris staging asal autofill (module+key) → diteruskan sbg query
+  // param POST agar server write-back id/subject/encounter ke baris yang tepat.
+  const sourceRef = useRef<{ module: string; key: string } | null>(null);
 
   const { apiResponse, sendRequest, resetResponse } = useApiRequest({
     resourceType: "CarePlan",
@@ -69,9 +72,14 @@ export default function CarePlanPage() {
   };
 
   // Autofill payload dari panel SIMGOS → mode POST + Raw JSON, lalu scroll ke form.
-  const handleUsePayload = (payload: unknown) => {
+  const handleUsePayload = (
+    payload: unknown,
+    _resourceType?: string,
+    source?: { module: string; key: string },
+  ) => {
     setActiveMethod("POST");
     resetResponse();
+    sourceRef.current = source ?? null;
     setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
     setTimeout(
       () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -84,11 +92,17 @@ export default function CarePlanPage() {
     resourceId?: string;
     queryParams?: Record<string, string | undefined>;
   }) => {
+    // POST hasil autofill: sertakan module+key → server write-back ke SIMGOS.
+    const src = sourceRef.current;
+    const queryParams =
+      activeMethod === "POST" && src
+        ? { ...params.queryParams, module: src.module, key: src.key }
+        : params.queryParams;
     await sendRequest({
       method: activeMethod,
       payload: params.payload,
       resourceId: params.resourceId,
-      queryParams: params.queryParams,
+      queryParams,
     });
   };
 

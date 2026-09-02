@@ -61,6 +61,15 @@ export async function resolveEncounterSubject(
 }
 
 /**
+ * Alias semantik: resolusi referensi Patient (subject) dari sebuah No.
+ * Pendaftaran. Sama persis dengan `resolveEncounterSubject` (NOPEN → NORM →
+ * `Patient/<id>` + display), tapi dinamai netral karena dipakai LINTAS resource
+ * klinis (CarePlan/Condition/Observation/Procedure/…) yang kolom `subject`-nya
+ * bisa BASI (null) seperti Encounter.subject — bukan hanya Encounter.
+ */
+export const resolvePatientRefByNopen = resolveEncounterSubject;
+
+/**
  * Versi batch: resolusi subject untuk banyak NOPEN sekaligus (satu kueri).
  * Dipakai panel agar tak N+1 saat memuat satu halaman baris. Key map = NOPEN.
  */

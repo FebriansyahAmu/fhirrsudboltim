@@ -35,6 +35,7 @@ type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
 // Label ramah untuk field yang dilengkapi otomatis server-side (enriched).
 const ENRICHED_LABEL: Record<string, string> = {
   subject: "Pasien (subject)",
+  patient: "Pasien (patient)",
   participant: "DPJP (participant)",
   encounter: "Encounter (ranap)",
 };
@@ -202,8 +203,16 @@ export default function ModuleSyncPanel({
   module: string;
   title?: string;
   defaultOpen?: boolean;
-  /** Dipanggil saat user menekan "Autofill ke form" pada modal payload. */
-  onUsePayload?: (payload: unknown, resourceType: string) => void;
+  /**
+   * Dipanggil saat user menekan "Autofill ke form" pada modal payload. `source`
+   * membawa identitas baris staging (module+key) agar halaman bisa meneruskannya
+   * sebagai query-param POST → server write-back id/subject/encounter ke baris itu.
+   */
+  onUsePayload?: (
+    payload: unknown,
+    resourceType: string,
+    source?: { module: string; key: string },
+  ) => void;
   /**
    * Aktifkan tombol "Kirim Antrian": POST berurutan semua baris HALAMAN ini
    * yang siap (belum terkirim & tidak menunggu referensi), langsung + write-back
@@ -447,7 +456,10 @@ export default function ModuleSyncPanel({
 
   const handleAutofill = () => {
     if (payloadData && onUsePayload) {
-      onUsePayload(payloadData.payload, payloadData.resourceType);
+      onUsePayload(payloadData.payload, payloadData.resourceType, {
+        module,
+        key: payloadKey ?? "",
+      });
       setPayloadKey(null);
     }
   };
@@ -545,12 +557,17 @@ export default function ModuleSyncPanel({
         const resourceType = String(pjson.resourceType);
 
         // 2. POST ke Satu Sehat (server melakukan write-back id / catatan gagal).
-        const sres = await fetch(`/api/fhir/${encodeURIComponent(resourceType)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify(pjson.payload),
-        });
+        //    module+key diteruskan agar server bisa write-back id/subject/
+        //    encounter ke baris staging klinis yang tepat.
+        const sres = await fetch(
+          `/api/fhir/${encodeURIComponent(resourceType)}?module=${encodeURIComponent(module)}&key=${encodeURIComponent(r.key)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(pjson.payload),
+          },
+        );
         await sres.text().catch(() => null);
 
         if (sres.ok) {

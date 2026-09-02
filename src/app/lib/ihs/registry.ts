@@ -121,6 +121,20 @@ export interface IhsModuleSpec {
    */
   dependsOn?: DependsRef | DependsRef[];
   /**
+   * Kolom pemegang referensi Patient (subject) untuk resource KLINIS — dipakai
+   * MELENGKAPI payload saat kolom itu BASI/null. Kolom `subject`/`patient`
+   * dimaterialisasi trigger SIMGOS HANYA saat baris dibuat (dan hanya bila
+   * pasien sudah punya IHS id saat itu); bila Patient di-POST BELAKANGAN,
+   * kolomnya tetap null → payload gagal ("subject mandatory"). Kita resolusi
+   * live via `nopen` → `Patient/<id>` (read-only), sama seperti Encounter.subject.
+   *
+   * Default (bila tak diisi) untuk modul dependen-Encounter:
+   * `{ refCol: "subject", refPath: "$.reference" }`. AllergyIntolerance memakai
+   * kolom `patient`, jadi diisi eksplisit. Resource definitional (Medication)
+   * tak punya subject → biarkan kosong (dan bukan dependen-Encounter).
+   */
+  subjectRef?: DependsRef;
+  /**
    * Bila diisi, tiap baris menampilkan tombol "Detail" yang menuju
    * `${detailBase}/${key}` — halaman rincian resource (mis. encounter →
    * kumpulan Condition/Observation/Procedure/… berdasar No. Pendaftaran).
@@ -215,6 +229,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     // Belum terkirim + reference kosong ⇒ "Menunggu Encounter" (pasien belum
     // punya kunjungan yang terkirim ke Satu Sehat).
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+    // Subject Pasien di kolom `patient` (bukan `subject`) — override default.
+    subjectRef: { refCol: "patient", refPath: "$.reference", label: "Patient" },
   },
 
   // ── ServiceRequest: satu resource, beberapa jenis tindakan ──
@@ -1068,4 +1084,32 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {
   return IHS_MODULES[module] ?? null;
+}
+
+/** Normalisasi `dependsOn` (satu objek / array / kosong) → array. */
+export function depsList(spec: IhsModuleSpec): DependsRef[] {
+  if (!spec.dependsOn) return [];
+  return Array.isArray(spec.dependsOn) ? spec.dependsOn : [spec.dependsOn];
+}
+
+/**
+ * Kolom pemegang referensi Patient (subject) untuk resource KLINIS. Eksplisit
+ * dari `spec.subjectRef` (mis. AllergyIntolerance → `patient`), atau default
+ * `{ refCol: "subject", refPath: "$.reference" }` untuk modul dependen-Encounter.
+ * Resource lain (Patient/Encounter/Medication) → null.
+ */
+export function subjectRefOf(spec: IhsModuleSpec): DependsRef | null {
+  if (spec.subjectRef) return spec.subjectRef;
+  if (depsList(spec).some((d) => d.label === "Encounter")) {
+    return { refCol: "subject", refPath: "$.reference", label: "Patient" };
+  }
+  return null;
+}
+
+/**
+ * Ketergantungan Encounter (kolom pemegang `Encounter.reference`, mis.
+ * `encounter` atau `context` pada MedicationDispense). null bila tak ada.
+ */
+export function encounterDepOf(spec: IhsModuleSpec): DependsRef | null {
+  return depsList(spec).find((d) => d.label === "Encounter") ?? null;
 }
