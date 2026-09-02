@@ -109,7 +109,7 @@ export default function ProcedurePage() {
       payload: params.payload,
       resourceId: params.resourceId,
       queryParams:
-        activeMethod === "POST" && sourceRef.current
+        (activeMethod === "POST" || activeMethod === "GET") && sourceRef.current
           ? {
               ...params.queryParams,
               module: sourceRef.current.module,

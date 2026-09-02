@@ -13,8 +13,7 @@ import {
   nikFromIdentifierParam,
 } from "@/app/lib/dal/patient-writeback";
 import { handleEncounterPostResult } from "@/app/lib/dal/encounter-writeback";
-import { writeBackClinicalResource } from "@/app/lib/dal/clinical-writeback";
-import { getModuleSpec } from "@/app/lib/ihs/registry";
+import { maybeClinicalWriteBack } from "@/app/lib/dal/clinical-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -84,6 +83,16 @@ export async function GET(
       console.error("[patient GET writeback] gagal update SIMGOS patient:", err);
     }
   }
+
+  // Resource KLINIS (GET search): bila client menyertakan ?module=&key= dan
+  // hasilnya 2xx, write-back id + subject + encounter ke baris staging (IF null).
+  // Bundle di-normalisasi → hanya diterapkan bila entry-nya tepat satu.
+  await maybeClinicalWriteBack({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+    responseData: result.data,
+  });
 
   return NextResponse.json(result.data, { status: result.status });
 }
@@ -178,39 +187,12 @@ export async function POST(
   // sukses (2xx). Baris ditautkan via (module,key) yang dikirim client (?module=
   // &key=) — resource klinis tak punya identifier untuk ditautkan dari response.
   // Isi kolom kosong saja (idempotent). Patient/Encounter punya jalur sendiri.
-  const wbModule = request.nextUrl.searchParams.get("module");
-  const wbKey = request.nextUrl.searchParams.get("key");
-  if (
-    wbModule &&
-    wbKey &&
-    wbModule !== "patient" &&
-    wbModule !== "encounter" &&
-    /^[A-Za-z0-9_-]{1,64}$/.test(wbKey) &&
-    result.status >= 200 &&
-    result.status < 300
-  ) {
-    const spec = getModuleSpec(wbModule);
-    // Modul harus terdaftar & resourceType-nya cocok dgn resource yang di-POST.
-    if (spec && spec.resourceType === resource) {
-      try {
-        const wb = await writeBackClinicalResource({
-          spec,
-          key: wbKey,
-          responseData: result.data,
-        });
-        if (wb) {
-          console.log(
-            `[clinical writeback] module=${wbModule} key=${wbKey} cols=${wb.cols.join("+")} rows=${wb.updated}`,
-          );
-        }
-      } catch (err) {
-        console.error(
-          `[clinical writeback] gagal update SIMGOS ${wbModule}:`,
-          err,
-        );
-      }
-    }
-  }
+  await maybeClinicalWriteBack({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+    responseData: result.data,
+  });
 
   return NextResponse.json(result.data, { status: result.status });
 }

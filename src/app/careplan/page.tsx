@@ -95,7 +95,7 @@ export default function CarePlanPage() {
     // POST hasil autofill: sertakan module+key → server write-back ke SIMGOS.
     const src = sourceRef.current;
     const queryParams =
-      activeMethod === "POST" && src
+      (activeMethod === "POST" || activeMethod === "GET") && src
         ? { ...params.queryParams, module: src.module, key: src.key }
         : params.queryParams;
     await sendRequest({

@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
+import { maybeClinicalWriteBack } from "@/app/lib/dal/clinical-writeback";
 import { getSession } from "@/app/lib/session";
 import { isValidUUID } from "@/app/lib/utils/security";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
@@ -46,6 +47,17 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     resourceType: resource,
     resourceId: id,
     userId: session.userId,
+  });
+
+  // Resource KLINIS (GET by-id): bila client menyertakan ?module=&key= dan
+  // hasilnya 2xx, write-back id + subject + encounter ke baris staging (IF null)
+  // — memperbaiki baris yang "terlanjur" terkirim sebelum ada write-back. Guard
+  // id di DAL memastikan hanya baris yang id-nya kosong/sama yang tersentuh.
+  await maybeClinicalWriteBack({
+    searchParams: _request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+    responseData: result.data,
   });
 
   return NextResponse.json(result.data, { status: result.status });
