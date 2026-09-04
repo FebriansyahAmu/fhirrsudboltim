@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { simgosExecute } from "@/app/lib/db/simgos";
+import { upsertNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
 import {
   getModuleSpec,
   subjectRefOf,
@@ -163,11 +164,62 @@ export async function writeBackClinicalResource(params: {
 }
 
 /**
- * Gerbang bersama untuk write-back klinis dari route FHIR (POST & GET). Baca
- * `?module=&key=` (identitas baris staging yang dikirim client), validasi, lalu
- * jalankan write-back bila sukses (2xx). Fire-and-forget: kegagalan hanya
- * di-log, tak pernah membatalkan response ke client. Patient & Encounter punya
- * jalur write-back sendiri → dilewati di sini.
+ * Resolusi target write-back dari `?module=&key=` (identitas baris staging yang
+ * dikirim client). Validasi module terdaftar & KLINIS (bukan Patient/Encounter,
+ * yang punya jalur sendiri) dan resourceType-nya cocok. null bila tak layak.
+ */
+function resolveTarget(
+  searchParams: URLSearchParams,
+  resource: string,
+): { spec: IhsModuleSpec; module: string; key: string } | null {
+  const module = searchParams.get("module");
+  const key = searchParams.get("key");
+  if (!module || !key) return null;
+  if (module === "patient" || module === "encounter") return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(key)) return null;
+  const spec = getModuleSpec(module);
+  if (!spec || spec.resourceType !== resource) return null;
+  return { spec, module, key };
+}
+
+/** Ringkas alasan gagal dari OperationOutcome / error response. */
+function extractDiagnostics(responseData: unknown): string | null {
+  if (!isRecord(responseData)) return null;
+  const issues = responseData.issue;
+  if (Array.isArray(issues)) {
+    const msgs: string[] = [];
+    for (const it of issues) {
+      if (!isRecord(it)) continue;
+      const diag = typeof it.diagnostics === "string" ? it.diagnostics : null;
+      const details =
+        isRecord(it.details) && typeof it.details.text === "string"
+          ? it.details.text
+          : null;
+      const code = typeof it.code === "string" ? it.code : null;
+      const m = diag ?? details ?? code;
+      if (m) msgs.push(m);
+    }
+    if (msgs.length) return msgs.join(" | ");
+  }
+  if (typeof responseData.error === "string") return responseData.error;
+  return null;
+}
+
+/** Teks catatan kegagalan (dipangkas ke NOTE_MAX). */
+function buildFailureNote(
+  resource: string,
+  status: number,
+  responseData: unknown,
+): string {
+  const diag = extractDiagnostics(responseData);
+  const s = `POST ${resource} gagal (HTTP ${status}).${diag ? " " + diag : ""}`;
+  return s.length > NOTE_MAX ? s.slice(0, NOTE_MAX) : s;
+}
+
+/**
+ * Gerbang write-back klinis untuk GET (by-id / search). Baca `?module=&key=`,
+ * validasi, dan write-back bila sukses (2xx). Untuk MEMPERBAIKI baris yang
+ * "terlanjur" terkirim. Fire-and-forget: kegagalan hanya di-log.
  */
 export async function maybeClinicalWriteBack(params: {
   searchParams: URLSearchParams;
@@ -177,24 +229,75 @@ export async function maybeClinicalWriteBack(params: {
 }): Promise<void> {
   const { searchParams, resource, status, responseData } = params;
   if (status < 200 || status >= 300) return;
-
-  const module = searchParams.get("module");
-  const key = searchParams.get("key");
-  if (!module || !key) return;
-  if (module === "patient" || module === "encounter") return;
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(key)) return;
-
-  const spec = getModuleSpec(module);
-  if (!spec || spec.resourceType !== resource) return;
-
+  const t = resolveTarget(searchParams, resource);
+  if (!t) return;
   try {
-    const wb = await writeBackClinicalResource({ spec, key, responseData });
+    const wb = await writeBackClinicalResource({
+      spec: t.spec,
+      key: t.key,
+      responseData,
+    });
     if (wb) {
       console.log(
-        `[clinical writeback] module=${module} key=${key} cols=${wb.cols.join("+")} rows=${wb.updated}`,
+        `[clinical writeback] module=${t.module} key=${t.key} cols=${wb.cols.join("+")} rows=${wb.updated}`,
       );
     }
   } catch (err) {
-    console.error(`[clinical writeback] gagal update SIMGOS ${module}:`, err);
+    console.error(`[clinical writeback] gagal update SIMGOS ${t.module}:`, err);
+  }
+}
+
+/**
+ * Proses hasil POST resource KLINIS (dipanggil dari route POST /api/fhir):
+ *   • SUKSES (2xx) → write-back id + subject + encounter ke staging (IF null).
+ *   • GAGAL (4xx/5xx) → catatan "kuning" (warning) di DB kita (ihs_row_notes,
+ *     BUKAN SIMGOS), ditautkan via (module, key) — muncul di panel pada baris
+ *     itu. Persis pola Encounter, tapi generik untuk semua modul klinis.
+ * Fire-and-forget: caller membungkus try/catch agar response client tak putus.
+ */
+export async function handleClinicalPostResult(params: {
+  searchParams: URLSearchParams;
+  resource: string;
+  status: number;
+  responseData: unknown;
+  userId: string;
+}): Promise<void> {
+  const { searchParams, resource, status, responseData, userId } = params;
+  const t = resolveTarget(searchParams, resource);
+  if (!t) return;
+
+  const ok = status >= 200 && status < 300;
+  if (ok) {
+    try {
+      const wb = await writeBackClinicalResource({
+        spec: t.spec,
+        key: t.key,
+        responseData,
+      });
+      if (wb) {
+        console.log(
+          `[clinical writeback] module=${t.module} key=${t.key} cols=${wb.cols.join("+")} rows=${wb.updated}`,
+        );
+      }
+    } catch (err) {
+      console.error(`[clinical writeback] gagal update SIMGOS ${t.module}:`, err);
+    }
+    return;
+  }
+
+  // Gagal → catatan kuning (warning) di DB kita, pada baris (module, key).
+  try {
+    await upsertNote({
+      module: t.module,
+      refKey: t.key,
+      mark: "kuning",
+      note: buildFailureNote(resource, status, responseData),
+      userId,
+    });
+    console.warn(
+      `[clinical note] module=${t.module} key=${t.key} status=${status} → catatan kuning`,
+    );
+  } catch (err) {
+    console.error(`[clinical note] gagal tulis catatan ${t.module}:`, err);
   }
 }

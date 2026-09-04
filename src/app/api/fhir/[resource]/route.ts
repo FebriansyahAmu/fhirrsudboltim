@@ -13,7 +13,10 @@ import {
   nikFromIdentifierParam,
 } from "@/app/lib/dal/patient-writeback";
 import { handleEncounterPostResult } from "@/app/lib/dal/encounter-writeback";
-import { maybeClinicalWriteBack } from "@/app/lib/dal/clinical-writeback";
+import {
+  maybeClinicalWriteBack,
+  handleClinicalPostResult,
+} from "@/app/lib/dal/clinical-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -183,16 +186,22 @@ export async function POST(
     }
   }
 
-  // Resource KLINIS: write-back id + subject + encounter ke staging SIMGOS bila
-  // sukses (2xx). Baris ditautkan via (module,key) yang dikirim client (?module=
-  // &key=) — resource klinis tak punya identifier untuk ditautkan dari response.
-  // Isi kolom kosong saja (idempotent). Patient/Encounter punya jalur sendiri.
-  await maybeClinicalWriteBack({
-    searchParams: request.nextUrl.searchParams,
-    resource,
-    status: result.status,
-    responseData: result.data,
-  });
+  // Resource KLINIS: sukses (2xx) → write-back id + subject + encounter ke
+  // staging (IF null); gagal (4xx/5xx) → catatan "kuning" di DB kita. Baris
+  // ditautkan via (module,key) dari client (?module=&key=) — resource klinis
+  // tak punya identifier untuk ditautkan dari response. Patient/Encounter punya
+  // jalur sendiri. Dibungkus agar kegagalan proses ini tak memutus response.
+  try {
+    await handleClinicalPostResult({
+      searchParams: request.nextUrl.searchParams,
+      resource,
+      status: result.status,
+      responseData: result.data,
+      userId: session.userId,
+    });
+  } catch (err) {
+    console.error("[clinical] gagal memproses hasil POST:", err);
+  }
 
   return NextResponse.json(result.data, { status: result.status });
 }

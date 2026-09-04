@@ -69,6 +69,7 @@ export default function ObservationSyncPanel({
         module={kind}
         title={`Observation · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>
