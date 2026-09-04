@@ -14,6 +14,7 @@ import {
   resolvePatientRefByNopen,
 } from "@/app/lib/ihs/encounter-subject";
 import { resolveEncounterRefByNopen } from "@/app/lib/ihs/encounter-ref";
+import { resolveLabRebuildByRefId } from "@/app/lib/ihs/lab-loinc";
 import { subjectRefOf } from "@/app/lib/ihs/registry";
 import type { DependsRef } from "@/app/lib/ihs/registry";
 
@@ -163,6 +164,30 @@ export async function GET(
           if (!enriched.includes(subjRefSpec.refCol)) {
             enriched.push(subjRefSpec.refCol);
           }
+        }
+      }
+    }
+
+    // Observation LAB (jenis=6): tabel SIMGOS `parameter_hasil_to_loinc` rusak
+    // (semua → placeholder 11477-7; sebagian tak termapping → code null → gagal
+    // 10010). RAKIT ULANG dari peta kita (lab_loinc_map) untuk parameter yang
+    // AKTIF & bernilai valid: override `code`, susun ulang `value` dari HASIL,
+    // dan tambah `interpretation`. Forward-only — baris yang sudah terkirim tak
+    // dikirim ulang; parameter yang belum di-katalog dibiarkan apa adanya.
+    if (spec.module === "observation") {
+      const [refId, jenis] = key.split("_");
+      if (jenis === "6") {
+        const payload = result.payload as Record<string, unknown>;
+        const rb = await resolveLabRebuildByRefId(refId);
+        if (rb) {
+          payload.code = rb.code;
+          delete payload.valueQuantity;
+          delete payload.valueString;
+          if (rb.valueQuantity) payload.valueQuantity = rb.valueQuantity;
+          if (rb.valueString != null) payload.valueString = rb.valueString;
+          if (rb.interpretation) payload.interpretation = rb.interpretation;
+          else delete payload.interpretation;
+          enriched.push("code");
         }
       }
     }

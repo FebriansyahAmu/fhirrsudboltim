@@ -28,6 +28,7 @@ import {
   LuLayoutList,
   LuListChecks,
   LuSearch,
+  LuZap,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -297,6 +298,19 @@ export default function ModuleSyncPanel({
   } | null>(null);
   const queueStopRef = useRef(false);
 
+  // Auto-kirim: antrian KONTINU lintas halaman + backoff saat kena rate limit.
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoArmed, setAutoArmed] = useState(false);
+  const [autoStats, setAutoStats] = useState({ ok: 0, fail: 0 });
+  const [autoWait, setAutoWait] = useState<number | null>(null); // detik sisa jeda
+  const [autoWaitReason, setAutoWaitReason] = useState<"limit" | "batch" | null>(
+    null,
+  );
+  const [autoSummary, setAutoSummary] = useState<{ ok: number; fail: number } | null>(
+    null,
+  );
+  const autoStopRef = useRef(false);
+
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -384,30 +398,39 @@ export default function ModuleSyncPanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [payloadKey]);
 
+  // Kontrol yang memicu muat-ulang dikunci selama auto-kirim/antrian berjalan
+  // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
+  const busy = autoRunning || queueRunning;
+
   const changeFilter = (f: SyncFilter) => {
+    if (busy) return;
     setFilter(f);
     setNoteFilter("");
     setPage(1);
   };
 
   const changeNoteFilter = (nf: string) => {
+    if (busy) return;
     setNoteFilter((cur) => (cur === nf ? "" : nf));
     setPage(1);
   };
 
   const changeDate = (f: string | null, t: string | null) => {
+    if (busy) return;
     setDateFrom(f);
     setDateTo(t);
     setPage(1);
   };
 
   const applyKeySearch = () => {
+    if (busy) return;
     setNoteFilter(""); // pencarian key diprioritaskan atas filter catatan
     setPage(1);
     setKeyQuery(keyInput.trim());
   };
 
   const clearKeySearch = () => {
+    if (busy) return;
     setKeyInput("");
     setKeyQuery("");
     setPage(1);
@@ -592,11 +615,215 @@ export default function ModuleSyncPanel({
     setQueueResults({});
   }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo]);
 
+  // ── Auto-kirim (kontinu lintas halaman, sadar rate limit) ──
+  const stopAuto = useCallback(() => {
+    autoStopRef.current = true;
+  }, []);
+
+  const autoSend = useCallback(async () => {
+    if (autoRunning || queueRunning) return;
+    autoStopRef.current = false;
+    setAutoArmed(false);
+    setAutoRunning(true);
+    setAutoSummary(null);
+    setAutoStats({ ok: 0, fail: 0 });
+
+    // Snapshot filter aktif (kontrol dinonaktifkan selama berjalan).
+    const f = filter,
+      nf = noteFilter,
+      df = dateFrom,
+      dt = dateTo,
+      kq = keyQuery;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // Hitung mundur jeda (detik), tampil di UI. Return false bila dihentikan.
+    const countdown = async (
+      secs: number,
+      reason: "limit" | "batch",
+    ): Promise<boolean> => {
+      for (let s = secs; s > 0; s--) {
+        if (autoStopRef.current) {
+          setAutoWait(null);
+          setAutoWaitReason(null);
+          return false;
+        }
+        setAutoWait(s);
+        setAutoWaitReason(reason);
+        await sleep(1000);
+      }
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      return true;
+    };
+
+    // Tunggu sampai rate limit reset (pakai header Retry-After).
+    const backoff = async (res: Response): Promise<boolean> => {
+      const raw = Number(res.headers.get("Retry-After"));
+      let secs = Number.isFinite(raw) && raw > 0 ? Math.ceil(raw) : 60;
+      secs = Math.min(secs, 120) + 1; // batasi + buffer 1 dtk
+      return countdown(secs, "limit");
+    };
+
+    // Kirim satu baris; ulangi baris yang sama bila kena 429 (setelah backoff).
+    const sendOne = async (
+      key: string,
+    ): Promise<"ok" | "fail" | "stopped"> => {
+      for (;;) {
+        if (autoStopRef.current) return "stopped";
+        let pres: Response;
+        try {
+          pres = await fetch(`/api/ihs/${module}/${encodeURIComponent(key)}`, {
+            credentials: "same-origin",
+          });
+        } catch {
+          return "fail";
+        }
+        if (pres.status === 429) {
+          if (!(await backoff(pres))) return "stopped";
+          continue;
+        }
+        let pjson: { resourceType?: string; payload?: unknown };
+        try {
+          pjson = await pres.json();
+        } catch {
+          return "fail";
+        }
+        if (!pres.ok || !pjson.resourceType) return "fail";
+        let sres: Response;
+        try {
+          sres = await fetch(
+            `/api/fhir/${encodeURIComponent(pjson.resourceType)}?module=${encodeURIComponent(module)}&key=${encodeURIComponent(key)}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              credentials: "same-origin",
+              body: JSON.stringify(pjson.payload),
+            },
+          );
+        } catch {
+          return "fail";
+        }
+        if (sres.status === 429) {
+          if (!(await backoff(sres))) return "stopped";
+          continue;
+        }
+        await sres.text().catch(() => null);
+        return sres.ok ? "ok" : "fail";
+      }
+    };
+
+    let ok = 0,
+      fail = 0,
+      processed = 0, // total entri terkirim (ok+gagal) untuk jeda tiap 100
+      p = 1,
+      guard = 0;
+    const MAX_LOOPS = 10000; // pengaman anti-loop tak berujung
+    const BATCH_PAUSE_EVERY = 100; // jeda 1 menit tiap 100 entri
+    const BATCH_PAUSE_SECS = 60;
+    // Baris yang GAGAL (respons ≠ 2xx / error) TIDAK di-write-back → tetap
+    // `!sent`, jadi akan muncul lagi saat muat ulang. Catat & LEWATI agar tidak
+    // dikirim berulang tanpa henti (skip on fail). Reset tiap run baru.
+    const failedKeys = new Set<string>();
+
+    try {
+      while (!autoStopRef.current && guard++ < MAX_LOOPS) {
+        // Ambil satu halaman (GET juga kena rate limit → backoff).
+        const noteQs = nf ? `&note=${nf}` : "";
+        const dateQs = (df ? `&from=${df}` : "") + (dt ? `&to=${dt}` : "");
+        const keyQs = kq ? `&key=${encodeURIComponent(kq)}` : "";
+        let resp: SyncResponse;
+        try {
+          const res = await fetch(
+            `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}${keyQs}`,
+            { credentials: "same-origin" },
+          );
+          if (res.status === 429) {
+            if (!(await backoff(res))) break;
+            continue;
+          }
+          const json = await res.json();
+          if (!res.ok) break;
+          resp = json as SyncResponse;
+        } catch {
+          break;
+        }
+
+        setData(resp);
+        setNotesMap(resp.notes ?? {});
+        const eligible = resp.rows.filter(
+          (r) => !r.sent && !r.waitingRef && !failedKeys.has(r.key),
+        );
+
+        if (eligible.length > 0) {
+          setQueueResults(
+            Object.fromEntries(
+              eligible.map((r) => [r.key, "pending" as QueueState]),
+            ),
+          );
+          for (const r of eligible) {
+            if (autoStopRef.current) break;
+            setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
+            const outcome = await sendOne(r.key);
+            if (outcome === "stopped") break;
+            if (outcome === "ok") {
+              ok++;
+              setQueueResults((s) => ({ ...s, [r.key]: "ok" }));
+            } else {
+              fail++;
+              failedKeys.add(r.key); // gagal → lewati di iterasi berikutnya
+              setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+            }
+            setAutoStats({ ok, fail });
+            processed++;
+            // Jeda 1 menit tiap 100 entri terkirim (ramah beban server).
+            if (processed % BATCH_PAUSE_EVERY === 0) {
+              if (!(await countdown(BATCH_PAUSE_SECS, "batch"))) break;
+            } else {
+              await sleep(120); // pacing kecil
+            }
+          }
+          // Muat ulang halaman yang sama: baris terkirim rontok (filter belum/
+          // siap) atau jadi ineligible (semua) → iterasi berikut menilai ulang.
+          continue;
+        }
+        // Tak ada yang eligible di halaman ini → maju halaman, atau selesai.
+        if (p < resp.totalPages) {
+          p++;
+          continue;
+        }
+        break;
+      }
+    } finally {
+      setAutoRunning(false);
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      setQueueResults({});
+      setAutoSummary({ ok, fail });
+      // Kembalikan tampilan normal + hitungan otoritatif (page 1).
+      setPage(1);
+      await load(f, 1, nf, df, dt, kq);
+    }
+  }, [
+    autoRunning,
+    queueRunning,
+    module,
+    load,
+    filter,
+    noteFilter,
+    dateFrom,
+    dateTo,
+    keyQuery,
+  ]);
+
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
     setQueueSummary(null);
     setQueueResults({});
+    setAutoArmed(false);
   }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
 
   const eligibleCount = data
@@ -694,7 +921,8 @@ export default function ModuleSyncPanel({
                         key={f.key}
                         type="button"
                         onClick={() => changeFilter(f.key)}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        disabled={autoRunning || queueRunning}
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
                           active
                             ? "bg-white text-teal-700 shadow-sm"
                             : "text-slate-500 hover:text-slate-800"
@@ -727,7 +955,7 @@ export default function ModuleSyncPanel({
                     onClick={() =>
                       load(filter, page, noteFilter, dateFrom, dateTo, keyQuery)
                     }
-                    disabled={loading || queueRunning}
+                    disabled={loading || queueRunning || autoRunning}
                     className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
                   >
                     <LuRefreshCw
@@ -778,7 +1006,7 @@ export default function ModuleSyncPanel({
                       <button
                         type="button"
                         onClick={() => setQueueArmed(true)}
-                        disabled={loading || eligibleCount === 0}
+                        disabled={loading || eligibleCount === 0 || autoRunning}
                         title={
                           eligibleCount === 0
                             ? "Tidak ada baris siap kirim di halaman ini (menunggu referensi & sudah terkirim dilewati)"
@@ -791,6 +1019,69 @@ export default function ModuleSyncPanel({
                         <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] tabular-nums">
                           {eligibleCount}
                         </span>
+                      </button>
+                    ))}
+
+                  {/* Auto Kirim: kontinu lintas halaman + backoff rate limit */}
+                  {enableQueue &&
+                    (autoRunning ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700">
+                          {autoWait != null ? (
+                            <>
+                              <LuClock className="h-3.5 w-3.5" />
+                              {autoWaitReason === "batch"
+                                ? `Jeda ${autoWait}s`
+                                : `Tunggu limit ${autoWait}s`}
+                            </>
+                          ) : (
+                            <>
+                              <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              Auto {fmt(autoStats.ok)}✓
+                              {autoStats.fail > 0 && ` · ${fmt(autoStats.fail)}✗`}
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={stopAuto}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                          Stop
+                        </button>
+                      </div>
+                    ) : autoArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-2 py-1 ring-1 ring-violet-200">
+                        <span className="pl-1 text-[11px] font-semibold text-violet-800">
+                          Kirim SEMUA yang siap?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={autoSend}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-violet-700"
+                        >
+                          <LuZap className="h-3.5 w-3.5" />
+                          Ya, auto-kirim
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAutoArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAutoArmed(true)}
+                        disabled={loading || queueRunning}
+                        title="Kirim SEMUA baris siap di seluruh halaman secara otomatis (per halaman lalu muat ulang); menunggu otomatis saat kena rate limit"
+                        className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuZap className="h-3.5 w-3.5" />
+                        Auto Kirim
                       </button>
                     ))}
                 </div>
@@ -900,6 +1191,71 @@ export default function ModuleSyncPanel({
                   </span>
                 )}
               </div>
+
+              {/* Banner auto-kirim */}
+              {enableQueue && (autoRunning || autoSummary) && (
+                <div className="px-4 pb-3">
+                  <div
+                    className={`rounded-xl border px-4 py-3 ${
+                      autoRunning
+                        ? "border-violet-100 bg-violet-50/60"
+                        : autoSummary && autoSummary.fail > 0
+                          ? "border-amber-100 bg-amber-50/60"
+                          : "border-emerald-100 bg-emerald-50/60"
+                    }`}
+                  >
+                    {autoRunning ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-violet-800">
+                        {autoWait != null ? (
+                          <>
+                            <LuClock className="h-3.5 w-3.5 shrink-0" />
+                            {autoWaitReason === "batch"
+                              ? `Jeda tiap 100 entri — melanjutkan dalam ${autoWait}s…`
+                              : `Kena rate limit — menunggu ${autoWait}s sampai reset, lalu lanjut otomatis…`}
+                          </>
+                        ) : (
+                          <>
+                            <LuRefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                            Auto-kirim berjalan… {fmt(autoStats.ok)} terkirim
+                            {autoStats.fail > 0 &&
+                              ` · ${fmt(autoStats.fail)} gagal (dicatat kuning)`}
+                          </>
+                        )}
+                      </div>
+                    ) : autoSummary ? (
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-xs font-medium text-slate-700">
+                          <span className="font-bold">Auto-kirim selesai.</span>{" "}
+                          <span className="font-semibold text-emerald-700">
+                            {fmt(autoSummary.ok)} terkirim
+                          </span>
+                          {autoSummary.fail > 0 && (
+                            <>
+                              {" · "}
+                              <span className="font-semibold text-amber-700">
+                                {fmt(autoSummary.fail)} gagal (dicatat kuning)
+                              </span>
+                            </>
+                          )}
+                          . Baris{" "}
+                          <span className="font-semibold">
+                            Menunggu {dependsOnAll ?? "referensi"}
+                          </span>{" "}
+                          dilewati.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setAutoSummary(null)}
+                          aria-label="Tutup ringkasan auto-kirim"
+                          className="shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
 
               {/* Banner antrian kirim */}
               {enableQueue && (queueRunning || queueSummary) && (
@@ -1213,7 +1569,7 @@ export default function ModuleSyncPanel({
                     <button
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={data.page <= 1 || loading}
+                      disabled={data.page <= 1 || loading || autoRunning || queueRunning}
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
                     >
                       <LuChevronLeft className="h-3.5 w-3.5" />
@@ -1226,7 +1582,12 @@ export default function ModuleSyncPanel({
                       onClick={() =>
                         setPage((p) => Math.min(data.totalPages, p + 1))
                       }
-                      disabled={data.page >= data.totalPages || loading}
+                      disabled={
+                        data.page >= data.totalPages ||
+                        loading ||
+                        autoRunning ||
+                        queueRunning
+                      }
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
                     >
                       <LuChevronRight className="h-3.5 w-3.5" />

@@ -104,3 +104,27 @@ CREATE TABLE IF NOT EXISTS ihs_row_notes (
     FOREIGN KEY (created_by) REFERENCES users (id)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─────────────────────────────────────────────
+-- Tabel: lab_loinc_map
+-- Peta parameter lab SIMGOS (master.parameter_tindakan_lab.ID =
+-- hasil_lab.PARAMETER_TINDAKAN) → kode LOINC yang BENAR. DB kita sendiri
+-- (fhir_satusehat) — boleh di-write. Dipakai enrichment aplikasi untuk mengisi
+-- Observation.code yang KOSONG (tak termapping di SIMGOS) saat rakit payload,
+-- tanpa menyentuh SIMGOS & tanpa menimpa kode yang sudah ada.
+-- Isi awal: jalankan `node --env-file=.env prisma/seed-lab-loinc.mjs`.
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS lab_loinc_map (
+  parameter_id  INT          NOT NULL COMMENT 'master.parameter_tindakan_lab.ID (= hasil_lab.PARAMETER_TINDAKAN)',
+  loinc_code    VARCHAR(20)  NULL     COMMENT 'kode LOINC yang benar (NULL bila worklist)',
+  loinc_display VARCHAR(300) NULL     COMMENT 'display LOINC',
+  param_name    VARCHAR(200) NULL     COMMENT 'nama parameter SIMGOS (dokumentasi)',
+  ucum_unit     VARCHAR(30)  NULL     COMMENT 'satuan tampil (UCUM); NULL=kualitatif',
+  ucum_code     VARCHAR(30)  NULL     COMMENT 'kode UCUM utk valueQuantity.code',
+  active        TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1=dipakai enrichment; 0=worklist',
+  note          VARCHAR(300) NULL,
+  created_at    DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at    DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+
+  PRIMARY KEY (parameter_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

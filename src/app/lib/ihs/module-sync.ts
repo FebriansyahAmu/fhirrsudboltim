@@ -13,6 +13,7 @@ import {
   resolveEncounterPatientHintsByNopen,
 } from "./encounter-subject";
 import { resolveEncounterRefsByNopen } from "./encounter-ref";
+import { resolveLabRebuildByRefIds } from "./lab-loinc";
 import type { DependsRef, IhsModuleSpec, SyncCellType } from "./registry";
 
 /** Normalisasi dependsOn (satu objek atau array) → array. */
@@ -460,7 +461,50 @@ async function finalizeRows(
   // Data klinis dependen-Encounter yg encounter-ref-nya yatim → resolusi
   // Encounter MILIK NOPEN-nya; bila sudah terkirim, lepas "Menunggu Encounter".
   await enrichClinicalEncounterRef(spec, rows, raw);
+  // Observation LAB (jenis=6) BELUM terkirim → tampilkan kode + nilai hasil
+  // RAKIT ULANG dari peta kita (lab_loinc_map), supaya panel mencerminkan apa
+  // yang akan dikirim (kode benar, bukan 11477-7). Hanya baris belum-terkirim
+  // (forward-only) agar tak menyesatkan tampilan data yang sudah di Satu Sehat.
+  await enrichLabObservationCode(spec, rows);
   return rows;
+}
+
+/**
+ * Observation LAB (jenis=6), baris BELUM terkirim: tampilkan hasil rakit ulang
+ * (code + nilai) dari peta LOINC kita (lab_loinc_map, aktif & bernilai valid) —
+ * batch via refId. Kosmetik untuk panel; payload sesungguhnya dirakit di route
+ * [module]/[key]. Hanya belum-terkirim → sejalan kebijakan forward-only. R-O.
+ */
+async function enrichLabObservationCode(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+): Promise<void> {
+  if (spec.module !== "observation") return;
+  const codeIdx = spec.columns.findIndex(
+    (c) => c.col === "code" && c.jsonPath === "$.coding[0].display",
+  );
+  if (codeIdx < 0) return;
+  const valIdx = spec.columns.findIndex((c) => c.col === "valueQuantity");
+
+  // Kandidat: baris LAB (key = "refId_6") yang BELUM terkirim.
+  const targets = rows.filter(
+    (r) => !r.sent && splitKey(r.key)[1] === "6",
+  );
+  if (targets.length === 0) return;
+
+  const map = await resolveLabRebuildByRefIds(
+    targets.map((r) => splitKey(r.key)[0]),
+  );
+  if (map.size === 0) return;
+
+  for (const r of targets) {
+    const rb = map.get(splitKey(r.key)[0]);
+    if (!rb) continue;
+    r.cells[codeIdx] = { ...r.cells[codeIdx], value: rb.codeDisplay };
+    if (valIdx >= 0) {
+      r.cells[valIdx] = { ...r.cells[valIdx], value: rb.valueDisplay };
+    }
+  }
 }
 
 /**

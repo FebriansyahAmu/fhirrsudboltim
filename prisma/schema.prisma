@@ -64,3 +64,19 @@ model ihs_row_notes {
   @@index([module], map: "idx_ihs_row_notes_module")
   @@index([mark], map: "idx_ihs_row_notes_mark")
 }
+
+/// Peta parameter lab SIMGOS → kode LOINC yang BENAR (DB kita, bukan SIMGOS).
+/// Dipakai enrichment untuk mengisi Observation.code yang kosong (tak termapping
+/// di SIMGOS) saat rakit payload. Lihat prisma/seed-lab-loinc.mjs.
+model lab_loinc_map {
+  parameter_id  Int      @id
+  loinc_code    String?  @db.VarChar(20)
+  loinc_display String?  @db.VarChar(300)
+  param_name    String?  @db.VarChar(200)
+  ucum_unit     String?  @db.VarChar(30)
+  ucum_code     String?  @db.VarChar(30)
+  active        Boolean  @default(true)
+  note          String?  @db.VarChar(300)
+  created_at    DateTime @default(now()) @db.DateTime(3)
+  updated_at    DateTime @default(now()) @db.DateTime(3)
+}
