@@ -29,6 +29,7 @@ import {
   LuListChecks,
   LuSearch,
   LuZap,
+  LuWrench,
 } from "react-icons/lu";
 
 type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
@@ -54,6 +55,7 @@ interface Row {
   waitingRef: boolean;
   waitingFor?: string[];
   satuSehatId: string | null;
+  reputDone?: boolean;
   cells: Cell[];
   hint?: { name?: string; nik?: string };
 }
@@ -200,6 +202,7 @@ export default function ModuleSyncPanel({
   onUsePayload,
   enableQueue = false,
   enableKeySearch = false,
+  enableLabRebuild = false,
 }: {
   module: string;
   title?: string;
@@ -222,10 +225,20 @@ export default function ModuleSyncPanel({
   enableQueue?: boolean;
   /** Aktifkan kotak pencarian berdasarkan key (mis. No. Pendaftaran = refId). */
   enableKeySearch?: boolean;
+  /**
+   * Aktifkan tombol "Perbaiki LOINC" pada baris LAB (jenis=6) belum-terkirim:
+   * rakit ulang code + nilai + interpretation dari peta LOINC kita lalu
+   * WRITE-BACK ke `kemkes-ihs.observation` (UPDATE by refId) agar bisa dikirim.
+   */
+  enableLabRebuild?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
   const [noteFilter, setNoteFilter] = useState<string>("");
+  // Sub-filter jenis observasi: "" (semua), "lab" (jenis=6), "ttv" (≠6).
+  const [jenis, setJenis] = useState<"" | "lab" | "ttv">("");
+  // LAB: sembunyikan baris yang kodenya sudah diperbaiki (PUT sukses).
+  const [hideDone, setHideDone] = useState(false);
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState(""); // teks di kotak cari
@@ -287,6 +300,14 @@ export default function ModuleSyncPanel({
   const [payloadError, setPayloadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Perbaiki LOINC (rakit ulang + write-back SIMGOS) per baris LAB.
+  const [rebuildingKey, setRebuildingKey] = useState<string | null>(null);
+  const [rebuildMsg, setRebuildMsg] = useState<{
+    key: string;
+    ok: boolean;
+    text: string;
+  } | null>(null);
+
   // Antrian kirim otomatis (send queue)
   const [queueRunning, setQueueRunning] = useState(false);
   const [queueArmed, setQueueArmed] = useState(false);
@@ -310,6 +331,18 @@ export default function ModuleSyncPanel({
     null,
   );
   const autoStopRef = useRef(false);
+
+  // Re-PUT retroaktif: perbaiki Observation LAB yang SUDAH terkirim (kode salah
+  // 11477-7) dengan payload rakit-ulang. Kontinu lintas halaman, sadar rate limit.
+  const [rePutRunning, setRePutRunning] = useState(false);
+  const [rePutArmed, setRePutArmed] = useState(false);
+  const [rePutStats, setRePutStats] = useState({ ok: 0, fail: 0, skip: 0 });
+  const [rePutSummary, setRePutSummary] = useState<{
+    ok: number;
+    fail: number;
+    skip: number;
+  } | null>(null);
+  const rePutStopRef = useRef(false);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -337,8 +370,9 @@ export default function ModuleSyncPanel({
         const dateQs =
           (df ? `&from=${df}` : "") + (dt ? `&to=${dt}` : "");
         const keyQs = kq ? `&key=${encodeURIComponent(kq)}` : "";
+        const jenisQs = jenis ? `&jenis=${jenis}` : "";
         const res = await fetch(
-          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}${keyQs}`,
+          `/api/ihs/${module}?filter=${f}&page=${p}${noteQs}${dateQs}${keyQs}${jenisQs}`,
           { credentials: "same-origin", signal },
         );
         const json = await res.json();
@@ -352,7 +386,7 @@ export default function ModuleSyncPanel({
         setLoading(false);
       }
     },
-    [module],
+    [module, jenis],
   );
 
   useEffect(() => {
@@ -389,6 +423,38 @@ export default function ModuleSyncPanel({
 
   const closePayload = useCallback(() => setPayloadKey(null), []);
 
+  // Rakit ulang Observation LAB (code+nilai+interpretation) & write-back ke
+  // SIMGOS by refId, lalu muat ulang halaman agar kolom ter-refresh.
+  const rebuildLab = useCallback(
+    async (key: string) => {
+      setRebuildingKey(key);
+      setRebuildMsg(null);
+      try {
+        const res = await fetch(
+          `/api/ihs/${module}/${encodeURIComponent(key)}/rebuild`,
+          { method: "POST", credentials: "same-origin" },
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? "Gagal rakit ulang");
+        setRebuildMsg({
+          key,
+          ok: true,
+          text: `${json.codeDisplay ?? "OK"}${json.valueDisplay ? " · " + json.valueDisplay : ""}`,
+        });
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+      } catch (e) {
+        setRebuildMsg({
+          key,
+          ok: false,
+          text: e instanceof Error ? e.message : "Gagal",
+        });
+      } finally {
+        setRebuildingKey(null);
+      }
+    },
+    [module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
+
   useEffect(() => {
     if (!payloadKey) return;
     const onKey = (e: KeyboardEvent) => {
@@ -400,12 +466,18 @@ export default function ModuleSyncPanel({
 
   // Kontrol yang memicu muat-ulang dikunci selama auto-kirim/antrian berjalan
   // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
-  const busy = autoRunning || queueRunning;
+  const busy = autoRunning || queueRunning || rePutRunning;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
     setFilter(f);
     setNoteFilter("");
+    setPage(1);
+  };
+
+  const changeJenis = (v: "" | "lab" | "ttv") => {
+    if (busy) return;
+    setJenis(v);
     setPage(1);
   };
 
@@ -441,6 +513,13 @@ export default function ModuleSyncPanel({
     data && data.totalRows > 0 ? (data.page - 1) * PAGE_SIZE + 1 : 0;
   const rangeEnd =
     data && data.totalRows > 0 ? rangeStart + data.rows.length - 1 : 0;
+
+  // Baris yang ditampilkan: sembunyikan yang sudah diperbaiki bila diminta
+  // (khusus tampilan LAB). Tak mengubah paginasi/hitungan server.
+  const displayRows =
+    data && hideDone && jenis === "lab"
+      ? data.rows.filter((r) => !r.reputDone)
+      : (data?.rows ?? []);
 
   const countFor = (f: SyncFilter) =>
     !summary
@@ -818,13 +897,203 @@ export default function ModuleSyncPanel({
     keyQuery,
   ]);
 
+  // ── Re-PUT retroaktif: perbaiki Observation LAB yang SUDAH terkirim ──
+  const stopRePut = useCallback(() => {
+    rePutStopRef.current = true;
+  }, []);
+
+  const rePutSend = useCallback(async () => {
+    if (rePutRunning || autoRunning || queueRunning) return;
+    rePutStopRef.current = false;
+    setRePutArmed(false);
+    setRePutRunning(true);
+    setRePutSummary(null);
+    setRePutStats({ ok: 0, fail: 0, skip: 0 });
+    // Selaraskan tampilan: hanya baris LAB yang sudah terkirim.
+    setFilter("terkirim");
+    setNoteFilter("");
+    setPage(1);
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const countdown = async (
+      secs: number,
+      reason: "limit" | "batch",
+    ): Promise<boolean> => {
+      for (let s = secs; s > 0; s--) {
+        if (rePutStopRef.current) {
+          setAutoWait(null);
+          setAutoWaitReason(null);
+          return false;
+        }
+        setAutoWait(s);
+        setAutoWaitReason(reason);
+        await sleep(1000);
+      }
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      return true;
+    };
+    const backoff = async (res: Response): Promise<boolean> => {
+      const raw = Number(res.headers.get("Retry-After"));
+      let secs = Number.isFinite(raw) && raw > 0 ? Math.ceil(raw) : 60;
+      secs = Math.min(secs, 120) + 1;
+      return countdown(secs, "limit");
+    };
+
+    // Re-PUT satu baris terkirim: rakit ulang payload → PUT. "skip" bila tak ada
+    // koreksi kode (parameter belum dipetakan / tanpa nilai valid).
+    const rePutOne = async (
+      r: Row,
+    ): Promise<"ok" | "fail" | "skip" | "stopped"> => {
+      if (!r.satuSehatId) return "skip";
+      for (;;) {
+        if (rePutStopRef.current) return "stopped";
+        let pres: Response;
+        try {
+          pres = await fetch(`/api/ihs/${module}/${encodeURIComponent(r.key)}`, {
+            credentials: "same-origin",
+          });
+        } catch {
+          return "fail";
+        }
+        if (pres.status === 429) {
+          if (!(await backoff(pres))) return "stopped";
+          continue;
+        }
+        let pjson: {
+          resourceType?: string;
+          payload?: Record<string, unknown>;
+          enriched?: string[];
+        };
+        try {
+          pjson = await pres.json();
+        } catch {
+          return "fail";
+        }
+        if (!pres.ok || !pjson.resourceType || !pjson.payload) return "fail";
+        // Hanya PUT bila memang ada koreksi kode (mapping aktif + nilai valid).
+        if (!pjson.enriched?.includes("code")) return "skip";
+        const body = { ...pjson.payload, id: r.satuSehatId };
+        let sres: Response;
+        try {
+          sres = await fetch(
+            `/api/fhir/${encodeURIComponent(pjson.resourceType)}/${encodeURIComponent(r.satuSehatId)}?module=${encodeURIComponent(module)}&key=${encodeURIComponent(r.key)}`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              credentials: "same-origin",
+              body: JSON.stringify(body),
+            },
+          );
+        } catch {
+          return "fail";
+        }
+        if (sres.status === 429) {
+          if (!(await backoff(sres))) return "stopped";
+          continue;
+        }
+        await sres.text().catch(() => null);
+        return sres.ok ? "ok" : "fail";
+      }
+    };
+
+    let ok = 0,
+      fail = 0,
+      skip = 0,
+      processed = 0,
+      p = 1,
+      totalPages = 1,
+      guard = 0;
+    const MAX_LOOPS = 20000;
+    const BATCH_PAUSE_EVERY = 100;
+    const BATCH_PAUSE_SECS = 60;
+    // Baris terkirim TIDAK rontok dari filter → maju halaman (bukan muat-ulang
+    // halaman yang sama), dgn `seen` mencegah proses ganda saat paging bergeser.
+    const seen = new Set<string>();
+
+    try {
+      while (!rePutStopRef.current && p <= totalPages && guard++ < MAX_LOOPS) {
+        let resp: SyncResponse;
+        try {
+          const res = await fetch(
+            `/api/ihs/${module}?filter=terkirim&page=${p}&jenis=lab`,
+            { credentials: "same-origin" },
+          );
+          if (res.status === 429) {
+            if (!(await backoff(res))) break;
+            continue;
+          }
+          const json = await res.json();
+          if (!res.ok) break;
+          resp = json as SyncResponse;
+        } catch {
+          break;
+        }
+        totalPages = resp.totalPages;
+        setData(resp);
+        setNotesMap(resp.notes ?? {});
+        const rows = resp.rows.filter(
+          // Lewati yang SUDAH diperbaiki (PUT sukses tercatat) → hanya yang
+          // masih salah yang di-PUT. Idempotent: aman dijalankan berulang.
+          (r) => r.sent && r.satuSehatId && !r.reputDone && !seen.has(r.key),
+        );
+        setQueueResults(
+          Object.fromEntries(rows.map((r) => [r.key, "pending" as QueueState])),
+        );
+        for (const r of rows) {
+          if (rePutStopRef.current) break;
+          seen.add(r.key);
+          setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
+          const outcome = await rePutOne(r);
+          if (outcome === "stopped") break;
+          if (outcome === "ok") {
+            ok++;
+            setQueueResults((s) => ({ ...s, [r.key]: "ok" }));
+          } else if (outcome === "skip") {
+            skip++;
+            setQueueResults((s) => {
+              const n = { ...s };
+              delete n[r.key];
+              return n;
+            });
+          } else {
+            fail++;
+            setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+          }
+          setRePutStats({ ok, fail, skip });
+          if (outcome !== "skip") {
+            processed++;
+            if (processed % BATCH_PAUSE_EVERY === 0) {
+              if (!(await countdown(BATCH_PAUSE_SECS, "batch"))) break;
+            } else {
+              await sleep(120);
+            }
+          }
+        }
+        p++;
+      }
+    } finally {
+      setRePutRunning(false);
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      setQueueResults({});
+      setRePutSummary({ ok, fail, skip });
+      setPage(1);
+      await load("terkirim", 1, "", dateFrom, dateTo, keyQuery);
+    }
+  }, [rePutRunning, autoRunning, queueRunning, module, load, dateFrom, dateTo, keyQuery]);
+
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
     setQueueSummary(null);
     setQueueResults({});
     setAutoArmed(false);
-  }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
+    setRePutArmed(false);
+  }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, jenis]);
 
   const eligibleCount = data
     ? data.rows.filter((r) => !r.sent && !r.waitingRef).length
@@ -921,7 +1190,7 @@ export default function ModuleSyncPanel({
                         key={f.key}
                         type="button"
                         onClick={() => changeFilter(f.key)}
-                        disabled={autoRunning || queueRunning}
+                        disabled={busy}
                         className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
                           active
                             ? "bg-white text-teal-700 shadow-sm"
@@ -955,7 +1224,7 @@ export default function ModuleSyncPanel({
                     onClick={() =>
                       load(filter, page, noteFilter, dateFrom, dateTo, keyQuery)
                     }
-                    disabled={loading || queueRunning || autoRunning}
+                    disabled={loading || busy}
                     className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-60"
                   >
                     <LuRefreshCw
@@ -1006,7 +1275,7 @@ export default function ModuleSyncPanel({
                       <button
                         type="button"
                         onClick={() => setQueueArmed(true)}
-                        disabled={loading || eligibleCount === 0 || autoRunning}
+                        disabled={loading || eligibleCount === 0 || busy}
                         title={
                           eligibleCount === 0
                             ? "Tidak ada baris siap kirim di halaman ini (menunggu referensi & sudah terkirim dilewati)"
@@ -1076,7 +1345,7 @@ export default function ModuleSyncPanel({
                       <button
                         type="button"
                         onClick={() => setAutoArmed(true)}
-                        disabled={loading || queueRunning}
+                        disabled={loading || busy}
                         title="Kirim SEMUA baris siap di seluruh halaman secara otomatis (per halaman lalu muat ulang); menunggu otomatis saat kena rate limit"
                         className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -1086,6 +1355,125 @@ export default function ModuleSyncPanel({
                     ))}
                 </div>
               </div>
+
+              {/* Sub-filter jenis (LAB/TTV) + Re-PUT retroaktif — khusus Observation */}
+              {enableLabRebuild && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    Jenis:
+                  </span>
+                  <div className="inline-flex gap-1 rounded-xl bg-slate-100 p-1">
+                    {([
+                      ["", "Semua"],
+                      ["lab", "Hasil Lab"],
+                      ["ttv", "TTV"],
+                    ] as const).map(([val, lab]) => (
+                      <button
+                        key={val || "all"}
+                        type="button"
+                        onClick={() => changeJenis(val)}
+                        disabled={busy}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                          jenis === val
+                            ? "bg-white text-teal-700 shadow-sm"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
+
+                  {jenis === "lab" && (
+                    <label
+                      className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${
+                        busy ? "opacity-50" : "cursor-pointer text-slate-600"
+                      }`}
+                      title="Sembunyikan baris yang kodenya SUDAH diperbaiki (PUT sukses) — sisakan hanya yang masih salah"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={hideDone}
+                        disabled={busy}
+                        onChange={(e) => setHideDone(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-400"
+                      />
+                      Hanya yang belum diperbaiki
+                    </label>
+                  )}
+
+                  {jenis === "lab" &&
+                    (rePutRunning ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-700">
+                          {autoWait != null ? (
+                            <>
+                              <LuClock className="h-3.5 w-3.5" />
+                              {autoWaitReason === "batch"
+                                ? `Jeda ${autoWait}s`
+                                : `Tunggu limit ${autoWait}s`}
+                            </>
+                          ) : (
+                            <>
+                              <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              rePUT {fmt(rePutStats.ok)}✓
+                              {rePutStats.fail > 0 && ` · ${fmt(rePutStats.fail)}✗`}
+                              {rePutStats.skip > 0 && ` · ${fmt(rePutStats.skip)} lewat`}
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={stopRePut}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                          Stop
+                        </button>
+                      </div>
+                    ) : rePutArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-50 px-2 py-1 ring-1 ring-fuchsia-200">
+                        <span className="pl-1 text-[11px] font-semibold text-fuchsia-800">
+                          PUT ulang SEMUA LAB terkirim dgn kode benar?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={rePutSend}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-fuchsia-700"
+                        >
+                          <LuWrench className="h-3.5 w-3.5" />
+                          Ya, perbaiki
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRePutArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRePutArmed(true)}
+                        disabled={loading || busy}
+                        title="PUT ulang SEMUA Observasi LAB yang sudah terkirim dengan kode LOINC yang benar (retroaktif, lintas halaman, sadar rate limit). Parameter tanpa pemetaan aktif / tanpa nilai dilewati."
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-700 transition-colors hover:bg-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuWrench className="h-3.5 w-3.5" />
+                        Perbaiki Terkirim (rePUT)
+                      </button>
+                    ))}
+
+                  {rePutSummary && !rePutRunning && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      Selesai: {fmt(rePutSummary.ok)} diperbaiki
+                      {rePutSummary.skip > 0 && `, ${fmt(rePutSummary.skip)} dilewati`}
+                      {rePutSummary.fail > 0 && `, ${fmt(rePutSummary.fail)} gagal`}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Pencarian berdasarkan key (mis. No. Pendaftaran = refId) */}
               {enableKeySearch && (
@@ -1349,8 +1737,8 @@ export default function ModuleSyncPanel({
                           Memuat…
                         </td>
                       </tr>
-                    ) : data && data.rows.length > 0 ? (
-                      data.rows.map((r) => {
+                    ) : data && displayRows.length > 0 ? (
+                      displayRows.map((r) => {
                         const noteFor = notesMap[r.key];
                         const qs = queueResults[r.key];
                         // Highlight baris berdasarkan status antrian (menang atas tint catatan).
@@ -1440,6 +1828,15 @@ export default function ModuleSyncPanel({
                                 >
                                   {r.satuSehatId}
                                 </span>
+                                {r.reputDone && (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full bg-fuchsia-50 px-1.5 py-0.5 text-[10px] font-bold text-fuchsia-700"
+                                    title="Kode LOINC sudah diperbaiki (PUT ulang sukses)"
+                                  >
+                                    <LuWrench className="h-2.5 w-2.5" />
+                                    LOINC ✓
+                                  </span>
+                                )}
                               </span>
                             ) : r.waitingRef ? (
                               (() => {
@@ -1508,6 +1905,33 @@ export default function ModuleSyncPanel({
                           </td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center justify-end gap-1.5">
+                              {rebuildMsg?.key === r.key && (
+                                <span
+                                  className={`max-w-40 truncate text-[10px] font-medium ${rebuildMsg.ok ? "text-emerald-600" : "text-rose-600"}`}
+                                  title={rebuildMsg.text}
+                                >
+                                  {rebuildMsg.ok ? "✓ " : "✕ "}
+                                  {rebuildMsg.text}
+                                </span>
+                              )}
+                              {enableLabRebuild &&
+                                !r.sent &&
+                                r.key.split("_")[1] === "6" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => rebuildLab(r.key)}
+                                    disabled={rebuildingKey === r.key || busy}
+                                    title="Perbaiki kode & nilai LOINC lalu tulis ke SIMGOS (agar bisa dikirim)"
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <LuWrench
+                                      className={`h-3.5 w-3.5 ${rebuildingKey === r.key ? "animate-spin" : ""}`}
+                                    />
+                                    {rebuildingKey === r.key
+                                      ? "Memperbaiki…"
+                                      : "Perbaiki LOINC"}
+                                  </button>
+                                )}
                               {detailBase && (
                                 <Link
                                   href={`${detailBase}/${encodeURIComponent(r.key)}`}
@@ -1569,7 +1993,7 @@ export default function ModuleSyncPanel({
                     <button
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={data.page <= 1 || loading || autoRunning || queueRunning}
+                      disabled={data.page <= 1 || loading || busy}
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
                     >
                       <LuChevronLeft className="h-3.5 w-3.5" />
@@ -1582,12 +2006,7 @@ export default function ModuleSyncPanel({
                       onClick={() =>
                         setPage((p) => Math.min(data.totalPages, p + 1))
                       }
-                      disabled={
-                        data.page >= data.totalPages ||
-                        loading ||
-                        autoRunning ||
-                        queueRunning
-                      }
+                      disabled={data.page >= data.totalPages || loading || busy}
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
                     >
                       <LuChevronRight className="h-3.5 w-3.5" />

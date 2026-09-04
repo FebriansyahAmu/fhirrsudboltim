@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
 import { maybeClinicalWriteBack } from "@/app/lib/dal/clinical-writeback";
+import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
 import { getSession } from "@/app/lib/session";
 import { isValidUUID } from "@/app/lib/utils/security";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
@@ -109,6 +110,15 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     resourceId: id,
     payload,
     userId: session.userId,
+  });
+
+  // Observation LAB (jenis=6): re-PUT sukses (2xx) → write-back code/value/
+  // interpretation yg sudah dikoreksi ke SIMGOS `observation` (via ?module=&key=)
+  // agar staging konsisten dgn versi baru di Satu Sehat. No-op utk non-LAB.
+  await maybeLabObservationWriteBack({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
   });
 
   return NextResponse.json(result.data, { status: result.status });

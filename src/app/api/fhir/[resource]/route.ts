@@ -17,6 +17,7 @@ import {
   maybeClinicalWriteBack,
   handleClinicalPostResult,
 } from "@/app/lib/dal/clinical-writeback";
+import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -202,6 +203,16 @@ export async function POST(
   } catch (err) {
     console.error("[clinical] gagal memproses hasil POST:", err);
   }
+
+  // Observation LAB (jenis=6): sukses (2xx) → write-back code/value/interpretation
+  // hasil rakit-ulang ke SIMGOS `observation` agar staging konsisten dgn yang
+  // dikirim ke Satu Sehat (bukan lagi 11477-7). No-op utk non-LAB. Tak memutus
+  // response (fungsi sudah menangani error sendiri).
+  await maybeLabObservationWriteBack({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
 
   return NextResponse.json(result.data, { status: result.status });
 }

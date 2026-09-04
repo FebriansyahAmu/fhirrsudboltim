@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { simgosQuery } from "@/app/lib/db/simgos";
+import { prisma } from "@/app/lib/db/prisma";
 import { getAttemptedIdentifiers } from "./notes.dal";
 import {
   resolveEncounterSubjectsByNopen,
@@ -43,6 +44,8 @@ function ident(s: string): string {
 }
 
 export type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
+/** Sub-filter jenis untuk modul `observation` (LAB jenis=6 vs TTV jenis≠6). */
+export type JenisFilter = "lab" | "ttv";
 
 export interface SyncSummary {
   total: number;
@@ -70,6 +73,8 @@ export interface SyncRow {
   /** Nama referensi yang masih kurang (mis. ["Medication", "Encounter"]). */
   waitingFor: string[];
   satuSehatId: string | null;
+  /** Observation LAB: sudah pernah di-PUT ulang (koreksi LOINC) & sukses. */
+  reputDone?: boolean;
   cells: SyncCell[];
   /**
    * Petunjuk "calon pasien" (nama + NIK dari master SIMGOS) untuk baris
@@ -204,9 +209,15 @@ function buildWhere(
   filter: SyncFilter,
   range?: DateRange,
   keyQuery?: string,
+  jenisFilter?: JenisFilter,
 ): { sql: string; params: unknown[] } {
   const conds: string[] = [];
   const params: unknown[] = [];
+
+  // Sub-filter LAB/TTV untuk tabel `observation` (campur jenis 1-6; 6 = LAB).
+  if (jenisFilter && spec.module === "observation") {
+    conds.push(jenisFilter === "lab" ? "`jenis` = 6" : "`jenis` <> 6");
+  }
 
   // Batasan dasar tabel tercampur (mis. hanya LAB dari service_request).
   if (spec.baseFilter) {
@@ -246,6 +257,7 @@ export async function getModuleSyncSummary(
   spec: IhsModuleSpec,
   range?: DateRange,
   keyQuery?: string,
+  jenisFilter?: JenisFilter,
 ): Promise<SyncSummary> {
   const table = ident(spec.table);
   const readySql = spec.readyFlag
@@ -262,8 +274,8 @@ export async function getModuleSyncSummary(
         .join(" OR ")}))`
     : "0";
 
-  // Summary di-scope oleh range tanggal & pencarian key (bukan filter status kirim).
-  const { sql, params } = buildWhere(spec, "semua", range, keyQuery);
+  // Summary di-scope oleh range tanggal, pencarian key, & sub-filter jenis.
+  const { sql, params } = buildWhere(spec, "semua", range, keyQuery, jenisFilter);
 
   const rows = await simgosQuery<Record<string, unknown>>(
     `SELECT
@@ -466,7 +478,47 @@ async function finalizeRows(
   // yang akan dikirim (kode benar, bukan 11477-7). Hanya baris belum-terkirim
   // (forward-only) agar tak menyesatkan tampilan data yang sudah di Satu Sehat.
   await enrichLabObservationCode(spec, rows);
+  // Observation: tandai baris yang sudah pernah di-PUT ulang & sukses (dari
+  // delivery_logs DB kita) → dipakai untuk MELEWATI di re-PUT retroaktif dan
+  // memfilter "hanya yang belum diperbaiki".
+  await enrichLabReputDone(spec, rows);
   return rows;
+}
+
+/**
+ * Observation: set `reputDone` untuk baris terkirim yang `satuSehatId`-nya sudah
+ * punya PUT sukses di `delivery_logs` (DB kita). Batch. Dipakai agar re-PUT tak
+ * mengulang data yang sudah benar. Read-only (Prisma DB sendiri, bukan SIMGOS).
+ */
+async function enrichLabReputDone(
+  spec: IhsModuleSpec,
+  rows: SyncRow[],
+): Promise<void> {
+  if (spec.module !== "observation") return;
+  const ids = [
+    ...new Set(
+      rows
+        .filter((r) => r.sent && r.satuSehatId)
+        .map((r) => r.satuSehatId as string),
+    ),
+  ];
+  if (ids.length === 0) return;
+
+  const done = await prisma.delivery_logs.findMany({
+    where: {
+      method: "PUT",
+      resource_type: "Observation",
+      status: "success",
+      resource_id: { in: ids },
+    },
+    select: { resource_id: true },
+  });
+  if (done.length === 0) return;
+
+  const doneSet = new Set(done.map((d) => d.resource_id));
+  for (const r of rows) {
+    if (r.satuSehatId && doneSet.has(r.satuSehatId)) r.reputDone = true;
+  }
 }
 
 /**
@@ -614,6 +666,7 @@ export async function getModuleSyncRows(
   pageSize = 10,
   range?: DateRange,
   keyQuery?: string,
+  jenisFilter?: JenisFilter,
 ): Promise<SyncRow[]> {
   const table = ident(spec.table);
   const orderCol = ident(spec.orderCol);
@@ -621,7 +674,7 @@ export async function getModuleSyncRows(
   const size = Math.min(Math.max(1, Math.trunc(pageSize)), 100);
   const offset = (Math.max(1, Math.trunc(page)) - 1) * size;
 
-  const { sql, params } = buildWhere(spec, filter, range, keyQuery);
+  const { sql, params } = buildWhere(spec, filter, range, keyQuery, jenisFilter);
 
   const raw = await simgosQuery<Record<string, unknown>>(
     `SELECT ${buildSelect(spec)}

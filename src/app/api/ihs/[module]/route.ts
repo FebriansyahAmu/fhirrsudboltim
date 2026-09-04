@@ -14,6 +14,7 @@ import {
   dependsLabels,
   type SyncFilter,
   type DateRange,
+  type JenisFilter,
 } from "@/app/lib/ihs/module-sync";
 import {
   getNotesForKeys,
@@ -32,6 +33,11 @@ function normNoteFilter(v: string | null): NoteFilter | "" {
   if (v === "ada") return "ada";
   if (v === "merah" || v === "kuning" || v === "hijau" || v === "biru") return v;
   return "";
+}
+
+/** Sub-filter jenis (khusus modul observation): lab (jenis=6) / ttv (≠6). */
+function normJenis(v: string | null): JenisFilter | undefined {
+  return v === "lab" || v === "ttv" ? v : undefined;
 }
 
 /** Validasi kata kunci pencarian key (mis. No. Pendaftaran) — alfanumerik saja. */
@@ -77,6 +83,7 @@ export async function GET(
   const filter = normFilter(sp.get("filter"));
   const noteFilter = normNoteFilter(sp.get("note"));
   const keyQuery = normKey(sp.get("key"));
+  const jenisFilter = normJenis(sp.get("jenis"));
   const requestedPage = Math.max(1, Number.parseInt(sp.get("page") ?? "1", 10) || 1);
 
   // Rentang tanggal hanya berlaku bila modul mendukung (spec.dateKey).
@@ -87,7 +94,7 @@ export async function GET(
 
   try {
     const [summary, noteCounts] = await Promise.all([
-      getModuleSyncSummary(spec, range, keyQuery),
+      getModuleSyncSummary(spec, range, keyQuery, jenisFilter),
       getNoteCounts(spec.module),
     ]);
 
@@ -139,7 +146,15 @@ export async function GET(
     const totalRows = countForFilter(summary, filter);
     const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
     const page = Math.min(requestedPage, totalPages);
-    const rows = await getModuleSyncRows(spec, filter, page, PAGE_SIZE, range, keyQuery);
+    const rows = await getModuleSyncRows(
+      spec,
+      filter,
+      page,
+      PAGE_SIZE,
+      range,
+      keyQuery,
+      jenisFilter,
+    );
     const notes = await getNotesForKeys(
       spec.module,
       rows.map((r) => r.key),

@@ -60,7 +60,7 @@ const SEED = [
   [10279001, "76772-3", "Plasmodium falciparum Ag [Presence] in Blood by Rapid immunoassay", "Rapid Malaria PF", null, null, A, null],
 
   // ── Nonaktif / worklist (perlu konfirmasi lab) ──
-  [10235003, "6690-2", "Leukocytes [#/volume] in Blood by Automated count", "WBC Anak 3-5 Thn", "10*3/uL", "10*3/uL", X, "Phantom/duplikat WBC (10235002)."],
+  [10235003, "6690-2", "Leukocytes [#/volume] in Blood by Automated count", "WBC Anak 3-5 Thn", "10*3/uL", "10*3/uL", A, "WBC rentang anak 3-5 thn; umumnya eksklusif thd WBC dewasa (10235002). Kirim hanya bila bernilai (value-guard)."],
   [10235005, null, null, "MID", "%", "%", X, "MID% analyzer 3-part — tak ada LOINC standar."],
   [10235006, null, null, "GRA", "%", "%", X, "GRA% (granulosit) analyzer 3-part — tinjau (mis. Neutrophils 770-8)."],
   [10239001, null, null, "ANTI A", null, null, X, "Golongan darah — sebaiknya kirim sbg ABO group (883-9), bukan per-antisera."],

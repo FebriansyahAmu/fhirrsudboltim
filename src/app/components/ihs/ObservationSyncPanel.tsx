@@ -70,6 +70,7 @@ export default function ObservationSyncPanel({
         title={`Observation · ${active.label}`}
         onUsePayload={onUsePayload}
         enableQueue
+        enableLabRebuild={kind === "observation"}
         defaultOpen
       />
     </div>
