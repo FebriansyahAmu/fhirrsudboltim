@@ -366,6 +366,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       },
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -390,6 +392,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "recordedDate", label: "Direkam", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -414,6 +418,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "recordedDate", label: "Direkam", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -438,6 +444,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "recordedDate", label: "Direkam", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -462,6 +470,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "recordedDate", label: "Direkam", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 

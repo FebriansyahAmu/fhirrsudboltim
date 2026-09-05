@@ -861,6 +861,11 @@ export async function getModulePayload(
   const payload: Record<string, unknown> = { resourceType: spec.resourceType };
   for (const [col, val] of Object.entries(row)) {
     if (exclude.has(col) || val == null) continue;
+    // String kosong "" di staging (mis. condition.severity / bodySite yang tak
+    // diisi procedure SIMGOS) BUKAN nilai FHIR valid — kolom object/array minta
+    // CodeableConcept/array, bukan "". Perlakukan seperti null → OMIT. FHIR tak
+    // punya field yang sah bernilai "".
+    if (typeof val === "string" && val.trim() === "") continue;
     if (bools.has(col)) payload[col] = Number(val) === 1;
     else if (val instanceof Date) payload[col] = fmtDateVal(val);
     else payload[col] = val;

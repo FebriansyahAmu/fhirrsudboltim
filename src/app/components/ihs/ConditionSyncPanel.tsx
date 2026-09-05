@@ -74,6 +74,7 @@ export default function ConditionSyncPanel({
         module={kind}
         title={`Condition · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>
