@@ -344,6 +344,18 @@ export default function ModuleSyncPanel({
   } | null>(null);
   const rePutStopRef = useRef(false);
 
+  // Reconcile SIMGOS: sesuaikan baris LAB (masih 11477-7) dengan katalog LOINC
+  // lalu tulis-balik ke SIMGOS agar staging KONSISTEN — dijalankan SEBELUM PUT.
+  // Hanya menyentuh SIMGOS (tanpa Satu Sehat), jadi cepat & tanpa batas kirim.
+  const [reconRunning, setReconRunning] = useState(false);
+  const [reconArmed, setReconArmed] = useState(false);
+  const [reconStats, setReconStats] = useState({ scanned: 0, updated: 0 });
+  const [reconSummary, setReconSummary] = useState<{
+    scanned: number;
+    updated: number;
+  } | null>(null);
+  const reconStopRef = useRef(false);
+
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -466,7 +478,7 @@ export default function ModuleSyncPanel({
 
   // Kontrol yang memicu muat-ulang dikunci selama auto-kirim/antrian berjalan
   // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
-  const busy = autoRunning || queueRunning || rePutRunning;
+  const busy = autoRunning || queueRunning || rePutRunning || reconRunning;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
@@ -1086,6 +1098,91 @@ export default function ModuleSyncPanel({
     }
   }, [rePutRunning, autoRunning, queueRunning, module, load, dateFrom, dateTo, keyQuery]);
 
+  // ── Sesuaikan SIMGOS (reconcile massal, tanpa Satu Sehat) ──
+  const stopRecon = useCallback(() => {
+    reconStopRef.current = true;
+  }, []);
+
+  // Loop batch: minta server memproses N baris LAB (masih 11477-7) per panggilan,
+  // maju lewat cursor refId sampai `done`. Hanya menulis SIMGOS → tak kena batas
+  // kirim Satu Sehat; hanya backoff pada rate-limit API kita sendiri (429).
+  const reconRun = useCallback(async () => {
+    if (busy) return;
+    reconStopRef.current = false;
+    setReconArmed(false);
+    setReconRunning(true);
+    setReconSummary(null);
+    setReconStats({ scanned: 0, updated: 0 });
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let cursor = 0;
+    let scanned = 0;
+    let updated = 0;
+    let guard = 0;
+    const MAX_LOOPS = 100000;
+
+    try {
+      for (;;) {
+        if (reconStopRef.current) break;
+        if (guard++ > MAX_LOOPS) break;
+        let res: Response;
+        try {
+          res = await fetch(`/api/ihs/${module}/reconcile`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({ cursor, batchSize: 1000 }),
+          });
+        } catch {
+          break;
+        }
+        if (res.status === 429) {
+          const raw = Number(res.headers.get("Retry-After"));
+          let secs = Number.isFinite(raw) && raw > 0 ? Math.ceil(raw) : 60;
+          secs = Math.min(secs, 120) + 1;
+          for (let s = secs; s > 0; s--) {
+            if (reconStopRef.current) break;
+            setAutoWait(s);
+            setAutoWaitReason("limit");
+            await sleep(1000);
+          }
+          setAutoWait(null);
+          setAutoWaitReason(null);
+          continue; // ulangi cursor yang sama
+        }
+        let json: {
+          scanned?: number;
+          updated?: number;
+          nextCursor?: number;
+          done?: boolean;
+          error?: string;
+        };
+        try {
+          json = await res.json();
+        } catch {
+          break;
+        }
+        if (!res.ok) break;
+        scanned += Number(json.scanned ?? 0);
+        updated += Number(json.updated ?? 0);
+        setReconStats({ scanned, updated });
+        if (json.done || !json.nextCursor || json.nextCursor <= cursor) break;
+        cursor = Number(json.nextCursor);
+        await sleep(120); // jeda kecil ramah rate-limit
+      }
+    } finally {
+      setReconRunning(false);
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      setReconSummary({ scanned, updated });
+      // Muat ulang tampilan (kode di panel kini ikut benar).
+      await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+    }
+  }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
+
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
@@ -1093,6 +1190,7 @@ export default function ModuleSyncPanel({
     setQueueResults({});
     setAutoArmed(false);
     setRePutArmed(false);
+    setReconArmed(false);
   }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, jenis]);
 
   const eligibleCount = data
@@ -1400,6 +1498,78 @@ export default function ModuleSyncPanel({
                       />
                       Hanya yang belum diperbaiki
                     </label>
+                  )}
+
+                  {/* Fase 1: sesuaikan SIMGOS dulu (write-back massal, tanpa Satu
+                      Sehat) — bikin staging konsisten sebelum di-PUT. */}
+                  {jenis === "lab" &&
+                    (reconRunning ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                          {autoWait != null ? (
+                            <>
+                              <LuClock className="h-3.5 w-3.5" />
+                              {`Tunggu limit ${autoWait}s`}
+                            </>
+                          ) : (
+                            <>
+                              <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              Sesuaikan {fmt(reconStats.updated)}✓
+                              <span className="font-normal opacity-70">
+                                {" "}
+                                / {fmt(reconStats.scanned)} dipindai
+                              </span>
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={stopRecon}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                          Stop
+                        </button>
+                      </div>
+                    ) : reconArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 ring-1 ring-emerald-200">
+                        <span className="pl-1 text-[11px] font-semibold text-emerald-800">
+                          Tulis kode/nilai benar ke SIMGOS untuk SEMUA LAB salah?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={reconRun}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, sesuaikan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReconArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setReconArmed(true)}
+                        disabled={loading || busy}
+                        title="Fase 1 (sebelum PUT): tulis-balik kode LOINC + nilai + interpretasi yang benar ke SIMGOS untuk SEMUA Observasi LAB yang masih 11477-7. Hanya menyentuh SIMGOS (tanpa Satu Sehat) → cepat, tanpa batas kirim. Parameter belum dipetakan / tanpa nilai dilewati. Idempotent."
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        Sesuaikan SIMGOS
+                      </button>
+                    ))}
+
+                  {reconSummary && !reconRunning && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      SIMGOS: {fmt(reconSummary.updated)} disesuaikan
+                      {` (${fmt(reconSummary.scanned)} dipindai)`}
+                    </span>
                   )}
 
                   {jenis === "lab" &&

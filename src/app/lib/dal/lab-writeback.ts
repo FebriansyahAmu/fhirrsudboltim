@@ -16,9 +16,10 @@
 //    untuk data yang masih bisa berubah — bisa dijalankan ulang bila perlu.
 // ─────────────────────────────────────────────────────────────
 
-import { simgosExecute } from "@/app/lib/db/simgos";
+import { simgosExecute, simgosQuery } from "@/app/lib/db/simgos";
 import {
   resolveLabRebuildByRefId,
+  resolveLabRebuildByRefIds,
   type LabRebuild,
 } from "@/app/lib/ihs/lab-loinc";
 
@@ -28,19 +29,14 @@ export interface LabWriteBackResult {
 }
 
 /**
- * Terapkan hasil rakit-ulang ke baris `observation` SIMGOS (jenis=6) via UPDATE.
- * Return null bila refId tak valid atau tak ada pemetaan aktif/nilai valid
- * (tak ada yang layak ditulis). `updated`=0 berarti baris tak ditemukan.
+ * Susun statement UPDATE tersanksi (kolom KONSTAN, nilai di-bind) untuk menulis
+ * hasil rakit-ulang `rb` ke baris `observation` SIMGOS (jenis=6) berdasarkan
+ * refId. code + interpretation = JSON; value polimorfik (Quantity/String).
  */
-export async function writeBackLabObservation(
+function buildLabWriteBackUpdate(
   refId: string,
-): Promise<LabWriteBackResult | null> {
-  if (!/^\d{1,20}$/.test(refId)) return null;
-
-  const rb = await resolveLabRebuildByRefId(refId);
-  if (!rb) return null;
-
-  // Kolom KONSTAN; nilai di-bind. code + interpretation = JSON; value polimorfik.
+  rb: LabRebuild,
+): { sql: string; params: unknown[] } {
   const setParts: string[] = ["`code` = CAST(? AS JSON)"];
   const params: unknown[] = [JSON.stringify(rb.code)];
 
@@ -64,9 +60,93 @@ export async function writeBackLabObservation(
     setParts.join(", ") +
     " WHERE `refId` = ? AND `jenis` = 6";
   params.push(refId);
+  return { sql, params };
+}
 
+/**
+ * Terapkan hasil rakit-ulang ke baris `observation` SIMGOS (jenis=6) via UPDATE.
+ * Return null bila refId tak valid atau tak ada pemetaan aktif/nilai valid
+ * (tak ada yang layak ditulis). `updated`=0 berarti baris tak ditemukan.
+ */
+export async function writeBackLabObservation(
+  refId: string,
+): Promise<LabWriteBackResult | null> {
+  if (!/^\d{1,20}$/.test(refId)) return null;
+
+  const rb = await resolveLabRebuildByRefId(refId);
+  if (!rb) return null;
+
+  const { sql, params } = buildLabWriteBackUpdate(refId, rb);
   const updated = await simgosExecute(sql, params);
   return { updated, rebuild: rb };
+}
+
+export interface LabReconcileBatch {
+  /** Baris LAB (masih 11477-7) yang dipindai pada batch ini. */
+  scanned: number;
+  /** Baris yang punya pemetaan aktif + nilai valid (layak ditulis). */
+  matched: number;
+  /** Baris `observation` yang benar-benar ter-update. */
+  updated: number;
+  /** refId numerik terakhir yang dipindai — dipakai sebagai cursor berikutnya. */
+  nextCursor: number;
+  /** true bila batch < batchSize → tidak ada lagi baris setelah ini. */
+  done: boolean;
+}
+
+/**
+ * RECONCILE MASSAL: sesuaikan baris `observation` LAB (jenis=6) yang MASIH
+ * berkode salah `11477-7` dengan katalog LOINC kita, lalu tulis code/value/
+ * interpretation yang benar ke SIMGOS — agar staging KONSISTEN sebelum di-PUT.
+ *
+ * Paging via cursor refId (numerik, menaik) → PASTI berhenti; hanya memindai
+ * baris yang masih salah (yang sudah benar otomatis terlewati) → idempotent,
+ * aman dijalankan ulang / dilanjut. Baris worklist (belum dipetakan) dipindai
+ * tapi dilewati (tak ada rebuild) — cursor tetap maju melewatinya.
+ *
+ * 🔒 Hanya BACA (SELECT) SIMGOS untuk memindai + UPDATE tersanksi per baris
+ *    (kolom konstan, nilai di-bind). Tidak menyentuh Satu Sehat.
+ */
+export async function reconcileLabObservationsBatch(
+  cursor: number,
+  batchSize: number,
+): Promise<LabReconcileBatch> {
+  const size = Math.min(Math.max(batchSize | 0, 1), 2000);
+  const from = Number.isFinite(cursor) && cursor > 0 ? Math.floor(cursor) : 0;
+
+  // Pindai baris LAB yang MASIH salah (11477-7), setelah cursor, urut refId.
+  const rows = await simgosQuery<{ refId: string; ref_num: number }>(
+    "SELECT `refId`, CAST(`refId` AS UNSIGNED) AS ref_num " +
+      "FROM `kemkes-ihs`.`observation` " +
+      "WHERE `jenis` = 6 AND CAST(`refId` AS UNSIGNED) > ? " +
+      "AND JSON_UNQUOTE(JSON_EXTRACT(`code`, '$.coding[0].code')) = '11477-7' " +
+      "ORDER BY CAST(`refId` AS UNSIGNED) ASC LIMIT ?",
+    [from, size],
+  );
+
+  if (rows.length === 0) {
+    return { scanned: 0, matched: 0, updated: 0, nextCursor: from, done: true };
+  }
+
+  const refIds = rows.map((r) => String(r.refId));
+  const nextCursor = Number(rows[rows.length - 1].ref_num);
+
+  // Resolusi rebuild sekali untuk seluruh batch (hanya aktif + bernilai valid).
+  const map = await resolveLabRebuildByRefIds(refIds);
+
+  let updated = 0;
+  for (const [refId, rb] of map) {
+    const { sql, params } = buildLabWriteBackUpdate(refId, rb);
+    updated += await simgosExecute(sql, params);
+  }
+
+  return {
+    scanned: rows.length,
+    matched: map.size,
+    updated,
+    nextCursor,
+    done: rows.length < size,
+  };
 }
 
 /**
