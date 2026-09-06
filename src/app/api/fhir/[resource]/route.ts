@@ -18,6 +18,7 @@ import {
   handleClinicalPostResult,
 } from "@/app/lib/dal/clinical-writeback";
 import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
+import { maybeWriteBackSpecimenForServiceRequest } from "@/app/lib/dal/specimen-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -212,6 +213,16 @@ export async function POST(
     searchParams: request.nextUrl.searchParams,
     resource,
     status: result.status,
+  });
+
+  // ServiceRequest LAB: sukses (2xx) → propagasikan IHS id-nya ke `specimen.request`
+  // (specimen.refId = SR.refId) agar Specimen bisa merujuk SR yang baru terkirim.
+  // No-op utk SR non-LAB. Fungsi sudah menangani error sendiri.
+  await maybeWriteBackSpecimenForServiceRequest({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+    responseData: result.data,
   });
 
   return NextResponse.json(result.data, { status: result.status });

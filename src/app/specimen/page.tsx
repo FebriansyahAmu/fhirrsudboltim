@@ -161,6 +161,8 @@ export default function SpecimenPage() {
           module="specimen"
           title="Data Spesimen di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
+          enableSpecimenReconcile
         />
 
         {/* ── 2. Method Tabs ── */}

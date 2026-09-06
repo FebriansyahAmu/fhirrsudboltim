@@ -1,15 +1,16 @@
 // app/api/ihs/[module]/reconcile/route.ts
-// POST — RECONCILE MASSAL Observation LAB (jenis=6): sesuaikan baris yang masih
-// berkode salah 11477-7 dengan katalog LOINC kita lalu WRITE-BACK code/value/
-// interpretation ke SIMGOS, per batch (cursor refId). Membuat staging SIMGOS
-// konsisten SEBELUM dikirim (PUT). 🔒 Terautentikasi + rate-limited. Hanya
-// modul `observation`. Tulis = UPDATE tersanksi (lihat lab-writeback.ts); tidak
-// menyentuh Satu Sehat.
+// POST — RECONCILE MASSAL staging SIMGOS. 🔒 Terautentikasi + rate-limited.
+// Tulis = UPDATE tersanksi; tidak menyentuh Satu Sehat.
+//   • module=observation → Observation LAB (jenis=6): perbaiki kode 11477-7 ke
+//     katalog LOINC + value/interpretation, per batch (cursor refId).
+//   • module=specimen → salin id ServiceRequest terkirim (service_request.id,
+//     UUID) ke specimen.request untuk spesimen ber-refId sama (sekali jalan).
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { reconcileLabObservationsBatch } from "@/app/lib/dal/lab-writeback";
+import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
 
 const DEFAULT_BATCH = 1000;
 
@@ -26,9 +27,21 @@ export async function POST(
   }
 
   const { module } = await params;
+
+  // Specimen: sekali jalan (satu UPDATE join) — salin id SR terkirim ke request.
+  if (module === "specimen") {
+    try {
+      const updated = await reconcileSpecimenRequestRefs();
+      return NextResponse.json({ updated, done: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Gagal reconcile Specimen";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
   if (module !== "observation") {
     return NextResponse.json(
-      { error: "Reconcile hanya untuk modul Observation" },
+      { error: "Reconcile hanya untuk modul Observation/Specimen" },
       { status: 400 },
     );
   }

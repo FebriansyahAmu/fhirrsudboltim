@@ -203,6 +203,7 @@ export default function ModuleSyncPanel({
   enableQueue = false,
   enableKeySearch = false,
   enableLabRebuild = false,
+  enableSpecimenReconcile = false,
 }: {
   module: string;
   title?: string;
@@ -231,6 +232,12 @@ export default function ModuleSyncPanel({
    * WRITE-BACK ke `kemkes-ihs.observation` (UPDATE by refId) agar bisa dikirim.
    */
   enableLabRebuild?: boolean;
+  /**
+   * Aktifkan tombol "Sesuaikan Specimen": untuk ServiceRequest yang SUDAH
+   * terkirim, salin IHS id-nya ke `specimen.request` (join by refId) agar
+   * Specimen bisa dikirim. Retroaktif/bulk, DB-only (tanpa Satu Sehat).
+   */
+  enableSpecimenReconcile?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
@@ -356,6 +363,13 @@ export default function ModuleSyncPanel({
   } | null>(null);
   const reconStopRef = useRef(false);
 
+  // Sesuaikan Specimen: salin id ServiceRequest terkirim → specimen.request
+  // (retroaktif, sekali jalan). Hanya panel Specimen (enableSpecimenReconcile).
+  const [specReconRunning, setSpecReconRunning] = useState(false);
+  const [specReconArmed, setSpecReconArmed] = useState(false);
+  const [specReconResult, setSpecReconResult] = useState<number | null>(null);
+  const [specReconError, setSpecReconError] = useState<string | null>(null);
+
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -478,7 +492,8 @@ export default function ModuleSyncPanel({
 
   // Kontrol yang memicu muat-ulang dikunci selama auto-kirim/antrian berjalan
   // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
-  const busy = autoRunning || queueRunning || rePutRunning || reconRunning;
+  const busy =
+    autoRunning || queueRunning || rePutRunning || reconRunning || specReconRunning;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
@@ -1183,6 +1198,34 @@ export default function ModuleSyncPanel({
     }
   }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
 
+  // ── Sesuaikan Specimen (retroaktif, sekali jalan, DB-only) ──
+  const specReconRun = useCallback(async () => {
+    if (busy) return;
+    setSpecReconArmed(false);
+    setSpecReconRunning(true);
+    setSpecReconResult(null);
+    setSpecReconError(null);
+    try {
+      const res = await fetch(`/api/ihs/${module}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSpecReconError(json?.error ?? "Gagal menyesuaikan Specimen");
+      } else {
+        setSpecReconResult(Number(json?.updated ?? 0));
+      }
+    } catch {
+      setSpecReconError("Gagal menghubungi server");
+    } finally {
+      setSpecReconRunning(false);
+      await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+    }
+  }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
+
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
@@ -1191,6 +1234,7 @@ export default function ModuleSyncPanel({
     setAutoArmed(false);
     setRePutArmed(false);
     setReconArmed(false);
+    setSpecReconArmed(false);
   }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, jenis]);
 
   const eligibleCount = data
@@ -1330,6 +1374,67 @@ export default function ModuleSyncPanel({
                     />
                     Muat ulang
                   </button>
+
+                  {/* Sesuaikan Specimen: salin id ServiceRequest terkirim ke
+                      specimen.request (retroaktif) — panel Specimen saja. */}
+                  {enableSpecimenReconcile &&
+                    (specReconRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Menyesuaikan…
+                      </span>
+                    ) : specReconArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 ring-1 ring-emerald-200">
+                        <span className="pl-1 text-[11px] font-semibold text-emerald-800">
+                          Tulis id ServiceRequest terkirim ke Specimen?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={specReconRun}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, sesuaikan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSpecReconArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpecReconResult(null);
+                          setSpecReconError(null);
+                          setSpecReconArmed(true);
+                        }}
+                        disabled={loading || busy}
+                        title="Untuk ServiceRequest yang SUDAH terkirim tapi Specimen-nya belum merujuknya: salin id ServiceRequest (dari SIMGOS) ke specimen.request. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent."
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        Sesuaikan Specimen
+                      </button>
+                    ))}
+
+                  {enableSpecimenReconcile &&
+                    !specReconRunning &&
+                    specReconResult != null && (
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {specReconResult > 0
+                          ? `${fmt(specReconResult)} Specimen disesuaikan`
+                          : "Sudah sesuai semua"}
+                      </span>
+                    )}
+                  {enableSpecimenReconcile && specReconError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {specReconError}
+                    </span>
+                  )}
 
                   {/* Kirim Antrian (opsional per modul) */}
                   {enableQueue &&

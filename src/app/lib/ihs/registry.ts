@@ -339,10 +339,20 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     columns: [
       { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
       { col: "type", label: "Jenis", type: "text", jsonPath: "$.coding[0].display" },
+      // Verifikasi tautan ServiceRequest: terisi "ServiceRequest/<id>" bila SR-nya
+      // SUDAH terkirim (punya id); kosong ⇒ baris ditandai "Menunggu ServiceRequest".
+      {
+        col: "request",
+        label: "ServiceRequest",
+        type: "code",
+        jsonPath: "$[0].reference",
+      },
       { col: "status", label: "Status", type: "code" },
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "receivedTime", label: "Diterima", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: {
       refCol: "request",
       refPath: "$[0].reference",
