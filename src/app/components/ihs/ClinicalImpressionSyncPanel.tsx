@@ -71,6 +71,7 @@ export default function ClinicalImpressionSyncPanel({
         module={kind}
         title={`ClinicalImpression · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>

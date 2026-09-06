@@ -71,6 +71,7 @@ export default function CarePlanSyncPanel({
         module={kind}
         title={`CarePlan · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>
