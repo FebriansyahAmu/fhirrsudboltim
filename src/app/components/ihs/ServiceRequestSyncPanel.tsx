@@ -68,6 +68,7 @@ export default function ServiceRequestSyncPanel({
         module={kind}
         title={`Service Request · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>

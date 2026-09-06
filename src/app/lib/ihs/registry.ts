@@ -258,6 +258,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       jsonPath: "$[0].coding[0].code",
       equals: "108252007",
     },
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -277,6 +279,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "occurrenceDateTime", label: "Waktu", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -296,6 +300,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "occurrenceDateTime", label: "Waktu", type: "date" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 
@@ -315,6 +321,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
       { col: "occurrencePeriod", label: "Mulai", type: "date", jsonPath: "$.start" },
     ],
+    // Filter tanggal by No. Pendaftaran (nopen, ter-index, encoding YYMMDD).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
   },
 

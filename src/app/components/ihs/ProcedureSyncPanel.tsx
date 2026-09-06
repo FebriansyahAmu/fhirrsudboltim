@@ -66,6 +66,7 @@ export default function ProcedureSyncPanel({
         module={kind}
         title={`Procedure · ${active.label}`}
         onUsePayload={onUsePayload}
+        enableQueue
         defaultOpen
       />
     </div>
