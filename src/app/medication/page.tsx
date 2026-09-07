@@ -166,6 +166,7 @@ export default function MedicationPage() {
           onUsePayload={handleUsePayload}
           enableQueue
           enableMedicationReconcile
+          enableJenisMedication
           defaultOpen
         />
 

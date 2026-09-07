@@ -44,8 +44,13 @@ function ident(s: string): string {
 }
 
 export type SyncFilter = "semua" | "terkirim" | "belum" | "siap";
-/** Sub-filter jenis untuk modul `observation` (LAB jenis=6 vs TTV jenis≠6). */
-export type JenisFilter = "lab" | "ttv";
+/**
+ * Sub-filter jenis:
+ *  - `observation`: LAB (jenis=6) vs TTV (jenis≠6).
+ *  - `medication`: Resep (jenis=1 → MedicationRequest) vs Penyerahan
+ *    (jenis=2 → MedicationDispense).
+ */
+export type JenisFilter = "lab" | "ttv" | "resep" | "penyerahan";
 
 export interface SyncSummary {
   total: number;
@@ -217,6 +222,13 @@ function buildWhere(
   // Sub-filter LAB/TTV untuk tabel `observation` (campur jenis 1-6; 6 = LAB).
   if (jenisFilter && spec.module === "observation") {
     conds.push(jenisFilter === "lab" ? "`jenis` = 6" : "`jenis` <> 6");
+  }
+  // Sub-filter Resep/Penyerahan untuk tabel `medication` (jenis 1 vs 2).
+  if (
+    (jenisFilter === "resep" || jenisFilter === "penyerahan") &&
+    spec.module === "medication"
+  ) {
+    conds.push(jenisFilter === "resep" ? "`jenis` = 1" : "`jenis` = 2");
   }
 
   // Batasan dasar tabel tercampur (mis. hanya LAB dari service_request).
@@ -457,7 +469,13 @@ async function finalizeRows(
           }
         }
       }
-      return { label: c.label, type: c.type, value: formatCell(raw, c.type) };
+      let value = formatCell(raw, c.type);
+      // Pemetaan nilai → label (mis. jenis 1/2 → Resep/Penyerahan).
+      if (c.valueMap && raw != null) {
+        const mapped = c.valueMap[String(raw)];
+        if (mapped != null) value = mapped;
+      }
+      return { label: c.label, type: c.type, value };
     }),
     };
   });

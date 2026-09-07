@@ -205,6 +205,7 @@ export default function ModuleSyncPanel({
   enableLabRebuild = false,
   enableSpecimenReconcile = false,
   enableMedicationReconcile = false,
+  enableJenisMedication = false,
 }: {
   module: string;
   title?: string;
@@ -245,12 +246,21 @@ export default function ModuleSyncPanel({
    * MedicationDispense. Retroaktif/bulk, DB-only.
    */
   enableMedicationReconcile?: boolean;
+  /**
+   * Aktifkan sub-filter Jenis (Resep / Penyerahan) untuk modul `medication`:
+   * jenis=1 → MedicationRequest (resep), jenis=2 → MedicationDispense
+   * (penyerahan). Memudahkan mengelola obat penyerahan yang memicu dispense.
+   */
+  enableJenisMedication?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
   const [noteFilter, setNoteFilter] = useState<string>("");
-  // Sub-filter jenis observasi: "" (semua), "lab" (jenis=6), "ttv" (≠6).
-  const [jenis, setJenis] = useState<"" | "lab" | "ttv">("");
+  // Sub-filter jenis: "" (semua); observation → "lab"/"ttv"; medication →
+  // "resep" (jenis=1) / "penyerahan" (jenis=2).
+  const [jenis, setJenis] = useState<
+    "" | "lab" | "ttv" | "resep" | "penyerahan"
+  >("");
   // LAB: sembunyikan baris yang kodenya sudah diperbaiki (PUT sukses).
   const [hideDone, setHideDone] = useState(false);
   const [dateFrom, setDateFrom] = useState<string | null>(null);
@@ -524,8 +534,8 @@ export default function ModuleSyncPanel({
           confirm: "Uji buat 1 resep dulu (Medication → send=0)?",
           confirmBtn: "Ya, uji 1 dulu",
           title:
-            "Untuk Medication yang SUDAH terkirim tapi MedicationRequest/Dispense-nya belum dibuat SIMGOS: setel send=0 → trigger membangun resep/penyerahan. UJI 1 baris terbaru dulu, cek hasilnya, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent.",
-          noun: "medication diproses (resep/penyerahan dibuat)",
+            "Untuk Medication (obat resep) yang SUDAH terkirim tapi MedicationRequest-nya belum dibuat SIMGOS: setel send=0 → trigger membangun resep. Hanya resep (jenis=1); penyerahan (dispense) dibiarkan lahir lewat urutan kirim yang benar. Sekaligus mengisi authorizingPrescription pada dispense yang MedicationRequest-nya sudah terkirim. UJI 1 baris terbaru dulu, cek hasilnya, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent.",
+          noun: "resep dibuat",
           emptyMsg: "Tidak ada yang perlu diproses",
           pilot: true,
         }
@@ -538,7 +548,7 @@ export default function ModuleSyncPanel({
     setPage(1);
   };
 
-  const changeJenis = (v: "" | "lab" | "ttv") => {
+  const changeJenis = (v: "" | "lab" | "ttv" | "resep" | "penyerahan") => {
     if (busy) return;
     setJenis(v);
     setPage(1);
@@ -1624,6 +1634,39 @@ export default function ModuleSyncPanel({
                     ))}
                 </div>
               </div>
+
+              {/* Sub-filter Jenis (Resep/Penyerahan) — khusus Medication */}
+              {enableJenisMedication && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    Jenis:
+                  </span>
+                  <div className="inline-flex gap-1 rounded-xl bg-slate-100 p-1">
+                    {([
+                      ["", "Semua"],
+                      ["resep", "Resep"],
+                      ["penyerahan", "Penyerahan"],
+                    ] as const).map(([val, lab]) => (
+                      <button
+                        key={val || "all"}
+                        type="button"
+                        onClick={() => changeJenis(val)}
+                        disabled={busy}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                          jenis === val
+                            ? "bg-white text-teal-700 shadow-sm"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Resep → MedicationRequest · Penyerahan → MedicationDispense
+                  </span>
+                </div>
+              )}
 
               {/* Sub-filter jenis (LAB/TTV) + Re-PUT retroaktif — khusus Observation */}
               {enableLabRebuild && (

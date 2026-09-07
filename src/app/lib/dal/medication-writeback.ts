@@ -131,12 +131,20 @@ export async function markMedicationSent(
 }
 
 /**
- * RECONCILE MASSAL (retroaktif): flip `send=0` untuk SEMUA Medication yang sudah
- * terkirim (id UUID) tapi nyangkut `send=1` (jenis 1/2), memicu trigger membuat
- * resep/penyerahan yang hilang. `limit` opsional → mode UJI (pilot) memproses
- * hanya sekian baris TERBARU (ORDER BY nopen DESC) untuk verifikasi sebelum
- * batch penuh. DB-only; idempotent (baris yang sudah send=0 tak kena lagi).
- * Return jumlah Medication yang di-flip (≈ jumlah baris hilir yang akan dibuat).
+ * RECONCILE MASSAL (retroaktif) — HANYA MedicationRequest (jenis=1). Flip
+ * `send=0` untuk Medication jenis=1 yang sudah terkirim (id UUID) tapi nyangkut
+ * `send=1`, memicu trigger membuat baris `medication_request` yang hilang.
+ *
+ * Sengaja TIDAK menyentuh jenis=2 (MedicationDispense): `medication_dispanse.
+ * authorizingPrescription` dimaterialisasi saat dispense DIBUAT dari
+ * `medication_request.id` — bila request-nya belum terkirim, referensi itu jadi
+ * NULL permanen (trigger EXISTS-path tak membangun ulang). Jadi dispense harus
+ * lahir LEWAT URUTAN KIRIM yang benar (Request terkirim dulu), bukan reconcile
+ * massal. Lihat catatan authorizingPrescription.
+ *
+ * `limit` opsional → mode UJI (pilot) memproses hanya sekian baris TERBARU
+ * (ORDER BY nopen DESC). DB-only; idempotent (baris yang sudah send=0 tak kena).
+ * Return jumlah Medication jenis=1 yang di-flip (≈ jumlah resep yang dibuat).
  */
 export async function reconcileMedicationSendFlags(
   limit?: number,
@@ -144,13 +152,43 @@ export async function reconcileMedicationSendFlags(
   const lim = Number.isInteger(limit) && (limit as number) > 0 ? (limit as number) : 0;
   let sql =
     "UPDATE `kemkes-ihs`.`medication` SET `send` = 0 " +
-    "WHERE `id` REGEXP ? AND `send` = 1 AND `jenis` IN (1, 2)";
+    "WHERE `id` REGEXP ? AND `send` = 1 AND `jenis` = 1";
   const paramsArr: unknown[] = [UUID_RE_SQL];
   if (lim > 0) {
     sql += " ORDER BY `nopen` DESC LIMIT ?";
     paramsArr.push(lim);
   }
   return simgosExecute(sql, paramsArr);
+}
+
+/**
+ * BACKFILL authorizingPrescription pada MedicationDispense (retroaktif).
+ * `medication_dispanse.authorizingPrescription` dimaterialisasi SAAT dispense
+ * dibuat, dari `medication_request.id` — bila request-nya belum terkirim saat
+ * itu, referensi jadi NULL permanen (trigger EXISTS-path tak membangun ulang).
+ * Fungsi ini menutup gap: untuk dispense BELUM terkirim (`id` NULL) dengan
+ * auth NULL, tautkan `MedicationRequest/<mreq.id>` bila request-nya KINI sudah
+ * terkirim (id UUID). Join meniru `medication_dispanse_before_insert`:
+ *   dispense → layanan.farmasi (KUNJUNGAN=refId, FARMASI=barang)
+ *            → order_detil_resep (ID = farmasi.ID_ORDER_DETAIL)
+ *            → medication_request (ORDER_ID/FARMASI/GROUP_RACIKAN)
+ * Hanya cabang non-racikan (`status_racikan=0`) — semua kandidat non-racikan.
+ * Join terverifikasi 1:1 (tanpa fan-out). Idempotent (guard `<=>`). Return
+ * jumlah baris dispense ter-update.
+ */
+export async function reconcileMedicationDispenseAuth(): Promise<number> {
+  const ref = "CONCAT('MedicationRequest/', mreq.`id`)";
+  const sql =
+    "UPDATE `kemkes-ihs`.`medication_dispanse` d " +
+    "JOIN `layanan`.`farmasi` o ON o.`KUNJUNGAN` = d.`refId` AND o.`FARMASI` = d.`barang` " +
+    "JOIN `layanan`.`order_detil_resep` odr ON odr.`ID` = o.`ID_ORDER_DETAIL` " +
+    "JOIN `kemkes-ihs`.`medication_request` mreq " +
+    "ON mreq.`refId` = odr.`ORDER_ID` AND mreq.`barang` = odr.`FARMASI` AND mreq.`group_racikan` = odr.`GROUP_RACIKAN` " +
+    "SET d.`authorizingPrescription` = JSON_ARRAY(JSON_OBJECT('reference', " + ref + ")) " +
+    "WHERE d.`status_racikan` = 0 AND d.`id` IS NULL AND mreq.`id` REGEXP ? " +
+    "AND (d.`authorizingPrescription` IS NULL " +
+    "OR NOT (JSON_UNQUOTE(JSON_EXTRACT(d.`authorizingPrescription`, '$[0].reference')) <=> " + ref + "))";
+  return simgosExecute(sql, [UUID_RE_SQL]);
 }
 
 /**

@@ -35,9 +35,14 @@ function normNoteFilter(v: string | null): NoteFilter | "" {
   return "";
 }
 
-/** Sub-filter jenis (khusus modul observation): lab (jenis=6) / ttv (≠6). */
+/**
+ * Sub-filter jenis: observation → lab (jenis=6) / ttv (≠6); medication →
+ * resep (jenis=1) / penyerahan (jenis=2). Nilai lain diabaikan.
+ */
 function normJenis(v: string | null): JenisFilter | undefined {
-  return v === "lab" || v === "ttv" ? v : undefined;
+  return v === "lab" || v === "ttv" || v === "resep" || v === "penyerahan"
+    ? v
+    : undefined;
 }
 
 /** Validasi kata kunci pencarian key (mis. No. Pendaftaran) — alfanumerik saja. */

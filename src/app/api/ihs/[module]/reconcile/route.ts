@@ -14,6 +14,7 @@ import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
 import {
   reconcileMedicationRefs,
   reconcileMedicationSendFlags,
+  reconcileMedicationDispenseAuth,
 } from "@/app/lib/dal/medication-writeback";
 
 const DEFAULT_BATCH = 1000;
@@ -43,9 +44,11 @@ export async function POST(
     }
   }
 
-  // Medication: PEMICU HILIR — flip `send=0` pada Medication terkirim yang
-  // nyangkut `send=1` → trigger SIMGOS membuat MedicationRequest/Dispense yang
-  // hilang. `limit` (opsional, dari body) → mode UJI (pilot) N baris terbaru
+  // Medication: PEMICU HILIR — flip `send=0` pada Medication resep (jenis=1)
+  // terkirim yang nyangkut `send=1` → trigger SIMGOS membuat MedicationRequest
+  // yang hilang. Dispense (jenis=2) SENGAJA tidak disentuh: authorizingPrescription
+  // baru resolve bila Request sudah terkirim, jadi dispense lahir lewat urutan
+  // kirim. `limit` (opsional, dari body) → mode UJI (pilot) N baris terbaru
   // sebelum batch penuh. Lalu propagasikan referensi ke baris hilir yang sudah
   // ada (memperbaiki medicationReference basi).
   if (module === "medication") {
@@ -61,9 +64,13 @@ export async function POST(
       const created = await reconcileMedicationSendFlags(limit);
       // Pelengkap: rapikan referensi basi pada baris hilir yang sudah ada.
       const refs = await reconcileMedicationRefs();
+      // Backfill authorizingPrescription pada dispense yg request-nya kini
+      // sudah terkirim (no-op selama belum ada request terkirim).
+      const dispenseAuth = await reconcileMedicationDispenseAuth();
       return NextResponse.json({
         updated: created,
         refsUpdated: refs,
+        dispenseAuthUpdated: dispenseAuth,
         pilot: limit != null,
         done: true,
       });

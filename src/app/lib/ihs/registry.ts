@@ -41,6 +41,12 @@ export interface SyncColumn {
    * Dikomposisi di JS (bukan COALESCE SQL) agar aman dari campuran collation.
    */
   alt?: { col: string; jsonPath?: string }[];
+  /**
+   * Pemetaan nilai mentah → label tampil (mis. {"1":"Resep","2":"Penyerahan"}).
+   * Diterapkan server-side saat merakit cell; nilai di luar peta ditampilkan apa
+   * adanya.
+   */
+  valueMap?: Record<string, string>;
 }
 
 export interface IhsModuleSpec {
@@ -982,6 +988,12 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { col: "code", label: "Obat", type: "text", jsonPath: "$.coding[0].display" },
       { col: "code", label: "Kode KFA", type: "code", jsonPath: "$.coding[0].code" },
       { col: "form", label: "Bentuk", type: "text", jsonPath: "$.coding[0].display" },
+      {
+        col: "jenis",
+        label: "Jenis",
+        type: "text",
+        valueMap: { "1": "Resep", "2": "Penyerahan" },
+      },
       { col: "status", label: "Status", type: "code" },
       { col: "nopen", label: "No. Pendaftaran", type: "code" },
     ],
