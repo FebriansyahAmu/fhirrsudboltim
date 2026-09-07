@@ -11,7 +11,10 @@ import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { reconcileLabObservationsBatch } from "@/app/lib/dal/lab-writeback";
 import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
-import { reconcileMedicationRefs } from "@/app/lib/dal/medication-writeback";
+import {
+  reconcileMedicationRefs,
+  reconcileMedicationSendFlags,
+} from "@/app/lib/dal/medication-writeback";
 
 const DEFAULT_BATCH = 1000;
 
@@ -40,12 +43,30 @@ export async function POST(
     }
   }
 
-  // Medication: sekali jalan — salin id Medication terkirim ke medicationReference
-  // pada MedicationRequest & MedicationDispense.
+  // Medication: PEMICU HILIR — flip `send=0` pada Medication terkirim yang
+  // nyangkut `send=1` → trigger SIMGOS membuat MedicationRequest/Dispense yang
+  // hilang. `limit` (opsional, dari body) → mode UJI (pilot) N baris terbaru
+  // sebelum batch penuh. Lalu propagasikan referensi ke baris hilir yang sudah
+  // ada (memperbaiki medicationReference basi).
   if (module === "medication") {
+    let limit: number | undefined;
     try {
-      const updated = await reconcileMedicationRefs();
-      return NextResponse.json({ updated, done: true });
+      const body = (await request.json()) as { limit?: unknown };
+      const l = Number(body?.limit);
+      if (Number.isFinite(l) && l > 0) limit = Math.floor(l);
+    } catch {
+      // tanpa body → batch penuh.
+    }
+    try {
+      const created = await reconcileMedicationSendFlags(limit);
+      // Pelengkap: rapikan referensi basi pada baris hilir yang sudah ada.
+      const refs = await reconcileMedicationRefs();
+      return NextResponse.json({
+        updated: created,
+        refsUpdated: refs,
+        pilot: limit != null,
+        done: true,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Gagal reconcile Medication";
       return NextResponse.json({ error: msg }, { status: 502 });

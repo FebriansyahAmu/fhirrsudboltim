@@ -19,7 +19,10 @@ import {
 } from "@/app/lib/dal/clinical-writeback";
 import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
 import { maybeWriteBackSpecimenForServiceRequest } from "@/app/lib/dal/specimen-writeback";
-import { maybeWriteBackMedicationRefs } from "@/app/lib/dal/medication-writeback";
+import {
+  maybeMarkMedicationSent,
+  maybeWriteBackMedicationRefs,
+} from "@/app/lib/dal/medication-writeback";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
@@ -226,9 +229,21 @@ export async function POST(
     responseData: result.data,
   });
 
+  // Medication: sukses (2xx) → setel `medication.send = 0` (id sudah ditulis
+  // oleh handleClinicalPostResult di atas). Transisi send 1→0 memicu trigger
+  // SIMGOS `medication_after_update` membangun baris MedicationRequest/Dispense
+  // yang hilang (lengkap dgn medicationReference dari id terkini). Tanpa ini,
+  // baris resep/penyerahan tak pernah dibuat. Fungsi menangani error sendiri.
+  await maybeMarkMedicationSent({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
+
   // Medication: sukses (2xx) → propagasikan IHS id-nya ke `medicationReference`
   // pada MedicationRequest & MedicationDispense (composite key sama) agar keduanya
-  // bisa merujuk Medication yang baru terkirim. Fungsi menangani error sendiri.
+  // bisa merujuk Medication yang baru terkirim. Pelengkap: memperbaiki referensi
+  // basi pada baris hilir yang SUDAH ada (trigger EXISTS-path tak memperbaruinya).
   await maybeWriteBackMedicationRefs({
     searchParams: request.nextUrl.searchParams,
     resource,

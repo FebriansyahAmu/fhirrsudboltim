@@ -376,6 +376,9 @@ export default function ModuleSyncPanel({
   const [specReconArmed, setSpecReconArmed] = useState(false);
   const [specReconResult, setSpecReconResult] = useState<number | null>(null);
   const [specReconError, setSpecReconError] = useState<string | null>(null);
+  // Medication (pilot): true setelah UJI 1 baris berhasil → munculkan tombol
+  // "Jalankan semua sisanya" untuk batch penuh.
+  const [specReconPilotDone, setSpecReconPilotDone] = useState(false);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -508,17 +511,23 @@ export default function ModuleSyncPanel({
     ? {
         btn: "Sesuaikan Specimen",
         confirm: "Tulis id ServiceRequest terkirim ke Specimen?",
+        confirmBtn: "Ya, sesuaikan",
         title:
           "Untuk ServiceRequest yang SUDAH terkirim tapi Specimen-nya belum merujuknya: salin id ServiceRequest (dari SIMGOS) ke specimen.request. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent.",
-        noun: "Specimen",
+        noun: "Specimen disesuaikan",
+        emptyMsg: "Sudah sesuai semua",
+        pilot: false,
       }
     : enableMedicationReconcile
       ? {
           btn: "Sesuaikan Resep",
-          confirm: "Tulis id Medication terkirim ke Resep & Penyerahan?",
+          confirm: "Uji buat 1 resep dulu (Medication → send=0)?",
+          confirmBtn: "Ya, uji 1 dulu",
           title:
-            "Untuk Medication yang SUDAH terkirim tapi MedicationRequest/Dispense-nya belum merujuknya: salin id Medication (dari SIMGOS) ke medicationReference. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent.",
-          noun: "baris resep/penyerahan",
+            "Untuk Medication yang SUDAH terkirim tapi MedicationRequest/Dispense-nya belum dibuat SIMGOS: setel send=0 → trigger membangun resep/penyerahan. UJI 1 baris terbaru dulu, cek hasilnya, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent.",
+          noun: "medication diproses (resep/penyerahan dibuat)",
+          emptyMsg: "Tidak ada yang perlu diproses",
+          pilot: true,
         }
       : null;
 
@@ -1226,32 +1235,40 @@ export default function ModuleSyncPanel({
   }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
 
   // ── Sesuaikan Specimen (retroaktif, sekali jalan, DB-only) ──
-  const specReconRun = useCallback(async () => {
-    if (busy) return;
-    setSpecReconArmed(false);
-    setSpecReconRunning(true);
-    setSpecReconResult(null);
-    setSpecReconError(null);
-    try {
-      const res = await fetch(`/api/ihs/${module}/reconcile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({}),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setSpecReconError(json?.error ?? "Gagal menyesuaikan Specimen");
-      } else {
-        setSpecReconResult(Number(json?.updated ?? 0));
+  // `limit` diisi hanya untuk mode UJI (pilot) Medication — proses N baris
+  // terbaru dulu. Tanpa `limit` = batch penuh.
+  const specReconRun = useCallback(
+    async (limit?: number) => {
+      if (busy) return;
+      setSpecReconArmed(false);
+      setSpecReconRunning(true);
+      setSpecReconResult(null);
+      setSpecReconError(null);
+      try {
+        const res = await fetch(`/api/ihs/${module}/reconcile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(limit ? { limit } : {}),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setSpecReconError(json?.error ?? "Gagal menyesuaikan");
+        } else {
+          setSpecReconResult(Number(json?.updated ?? 0));
+          // Setelah UJI berhasil → tandai agar tombol batch penuh muncul.
+          // Batch penuh (tanpa limit) mengakhiri alur.
+          setSpecReconPilotDone(limit != null);
+        }
+      } catch {
+        setSpecReconError("Gagal menghubungi server");
+      } finally {
+        setSpecReconRunning(false);
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
       }
-    } catch {
-      setSpecReconError("Gagal menghubungi server");
-    } finally {
-      setSpecReconRunning(false);
-      await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
-    }
-  }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
+    },
+    [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
 
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
@@ -1262,6 +1279,7 @@ export default function ModuleSyncPanel({
     setRePutArmed(false);
     setReconArmed(false);
     setSpecReconArmed(false);
+    setSpecReconPilotDone(false);
   }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, jenis]);
 
   const eligibleCount = data
@@ -1417,11 +1435,13 @@ export default function ModuleSyncPanel({
                         </span>
                         <button
                           type="button"
-                          onClick={specReconRun}
+                          onClick={() =>
+                            reconcileCfg.pilot ? specReconRun(1) : specReconRun()
+                          }
                           className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-700"
                         >
                           <LuDatabase className="h-3.5 w-3.5" />
-                          Ya, sesuaikan
+                          {reconcileCfg.confirmBtn}
                         </button>
                         <button
                           type="button"
@@ -1437,6 +1457,7 @@ export default function ModuleSyncPanel({
                         onClick={() => {
                           setSpecReconResult(null);
                           setSpecReconError(null);
+                          setSpecReconPilotDone(false);
                           setSpecReconArmed(true);
                         }}
                         disabled={loading || busy}
@@ -1453,9 +1474,27 @@ export default function ModuleSyncPanel({
                     specReconResult != null && (
                       <span className="text-[11px] font-medium text-slate-500">
                         {specReconResult > 0
-                          ? `${fmt(specReconResult)} ${reconcileCfg.noun} disesuaikan`
-                          : "Sudah sesuai semua"}
+                          ? `${fmt(specReconResult)} ${reconcileCfg.noun}`
+                          : reconcileCfg.emptyMsg}
                       </span>
+                    )}
+
+                  {/* Pilot Medication berhasil → tombol batch penuh (sisanya). */}
+                  {reconcileCfg &&
+                    reconcileCfg.pilot &&
+                    specReconPilotDone &&
+                    !specReconArmed &&
+                    !specReconRunning && (
+                      <button
+                        type="button"
+                        onClick={() => specReconRun()}
+                        disabled={loading || busy}
+                        title="Proses SEMUA Medication terkirim yang masih nyangkut (send=1) → buat resep/penyerahan yang hilang."
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        Jalankan semua sisanya
+                      </button>
                     )}
                   {reconcileCfg && specReconError && (
                     <span className="text-[11px] font-medium text-red-500">
