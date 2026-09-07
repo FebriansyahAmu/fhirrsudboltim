@@ -819,6 +819,39 @@ function fmtDateVal(d: Date): string {
  * Kolom JSON (identifier, name, address, …) sudah dibangun trigger SIMGOS.
  * 🔒 Read-only. Hasil untuk preview/autofill; operator meninjau sebelum kirim.
  */
+/**
+ * Bersihkan nilai JSON staging agar valid FHIR: buang `null`/`undefined`,
+ * string kosong (setelah trim), serta objek/array yang menjadi KOSONG setelah
+ * dibersihkan. Rekursif. Primitif lain (termasuk `0` dan `false`) dipertahankan.
+ *
+ * Kenapa: SIMGOS kerap menyimpan sub-field kosong sebagai `null` di dalam kolom
+ * JSON (mis. `Medication.ingredient[].strength.denominator = {code:null,
+ * value:0, system:null}`). FHIR TIDAK mengenal field bernilai null — Satu Sehat
+ * menolaknya (mis. Rule 10028 "Invalid coding system" untuk `system:null`).
+ * Kolom object/array dilewatkan ke sini sebelum masuk payload. Return
+ * `undefined` bila seluruhnya kosong (→ kolom di-omit).
+ */
+function sanitizeFhirValue(value: unknown): unknown {
+  if (value === null || value === undefined) return undefined;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) {
+    const arr = value
+      .map(sanitizeFhirValue)
+      .filter((v) => v !== undefined);
+    return arr.length ? arr : undefined;
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim() === "") continue;
+      const cleaned = sanitizeFhirValue(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return value; // primitif (string non-kosong, number termasuk 0, boolean)
+}
+
 export async function getModulePayload(
   spec: IhsModuleSpec,
   key: string,
@@ -868,7 +901,11 @@ export async function getModulePayload(
     if (typeof val === "string" && val.trim() === "") continue;
     if (bools.has(col)) payload[col] = Number(val) === 1;
     else if (val instanceof Date) payload[col] = fmtDateVal(val);
-    else payload[col] = val;
+    else if (typeof val === "object") {
+      // Kolom JSON (object/array): buang null/kosong bersarang (FHIR-invalid).
+      const cleaned = sanitizeFhirValue(val);
+      if (cleaned !== undefined) payload[col] = cleaned;
+    } else payload[col] = val;
   }
 
   const nopen = row.nopen == null ? null : String(row.nopen);

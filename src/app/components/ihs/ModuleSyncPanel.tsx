@@ -204,6 +204,7 @@ export default function ModuleSyncPanel({
   enableKeySearch = false,
   enableLabRebuild = false,
   enableSpecimenReconcile = false,
+  enableMedicationReconcile = false,
 }: {
   module: string;
   title?: string;
@@ -238,6 +239,12 @@ export default function ModuleSyncPanel({
    * Specimen bisa dikirim. Retroaktif/bulk, DB-only (tanpa Satu Sehat).
    */
   enableSpecimenReconcile?: boolean;
+  /**
+   * Seperti `enableSpecimenReconcile`, tapi untuk Medication → salin id
+   * Medication terkirim ke `medicationReference` pada MedicationRequest &
+   * MedicationDispense. Retroaktif/bulk, DB-only.
+   */
+  enableMedicationReconcile?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [filter, setFilter] = useState<SyncFilter>("semua");
@@ -494,6 +501,26 @@ export default function ModuleSyncPanel({
   // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
   const busy =
     autoRunning || queueRunning || rePutRunning || reconRunning || specReconRunning;
+
+  // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only) — Specimen atau
+  // Medication. Runner-nya generik (POST ke /api/ihs/<module>/reconcile).
+  const reconcileCfg = enableSpecimenReconcile
+    ? {
+        btn: "Sesuaikan Specimen",
+        confirm: "Tulis id ServiceRequest terkirim ke Specimen?",
+        title:
+          "Untuk ServiceRequest yang SUDAH terkirim tapi Specimen-nya belum merujuknya: salin id ServiceRequest (dari SIMGOS) ke specimen.request. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent.",
+        noun: "Specimen",
+      }
+    : enableMedicationReconcile
+      ? {
+          btn: "Sesuaikan Resep",
+          confirm: "Tulis id Medication terkirim ke Resep & Penyerahan?",
+          title:
+            "Untuk Medication yang SUDAH terkirim tapi MedicationRequest/Dispense-nya belum merujuknya: salin id Medication (dari SIMGOS) ke medicationReference. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent.",
+          noun: "baris resep/penyerahan",
+        }
+      : null;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
@@ -1375,9 +1402,9 @@ export default function ModuleSyncPanel({
                     Muat ulang
                   </button>
 
-                  {/* Sesuaikan Specimen: salin id ServiceRequest terkirim ke
-                      specimen.request (retroaktif) — panel Specimen saja. */}
-                  {enableSpecimenReconcile &&
+                  {/* Sesuaikan (retroaktif): salin id upstream terkirim ke
+                      referensi hilir di SIMGOS. Specimen / Medication. */}
+                  {reconcileCfg &&
                     (specReconRunning ? (
                       <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
                         <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -1386,7 +1413,7 @@ export default function ModuleSyncPanel({
                     ) : specReconArmed ? (
                       <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 ring-1 ring-emerald-200">
                         <span className="pl-1 text-[11px] font-semibold text-emerald-800">
-                          Tulis id ServiceRequest terkirim ke Specimen?
+                          {reconcileCfg.confirm}
                         </span>
                         <button
                           type="button"
@@ -1413,24 +1440,24 @@ export default function ModuleSyncPanel({
                           setSpecReconArmed(true);
                         }}
                         disabled={loading || busy}
-                        title="Untuk ServiceRequest yang SUDAH terkirim tapi Specimen-nya belum merujuknya: salin id ServiceRequest (dari SIMGOS) ke specimen.request. Retroaktif, sekali jalan, tanpa Satu Sehat. Hanya id ber-format UUID; idempotent."
+                        title={reconcileCfg.title}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <LuDatabase className="h-3.5 w-3.5" />
-                        Sesuaikan Specimen
+                        {reconcileCfg.btn}
                       </button>
                     ))}
 
-                  {enableSpecimenReconcile &&
+                  {reconcileCfg &&
                     !specReconRunning &&
                     specReconResult != null && (
                       <span className="text-[11px] font-medium text-slate-500">
                         {specReconResult > 0
-                          ? `${fmt(specReconResult)} Specimen disesuaikan`
+                          ? `${fmt(specReconResult)} ${reconcileCfg.noun} disesuaikan`
                           : "Sudah sesuai semua"}
                       </span>
                     )}
-                  {enableSpecimenReconcile && specReconError && (
+                  {reconcileCfg && specReconError && (
                     <span className="text-[11px] font-medium text-red-500">
                       {specReconError}
                     </span>

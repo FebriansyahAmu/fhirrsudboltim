@@ -192,6 +192,62 @@ export async function GET(
       }
     }
 
+    // Medication: SIMGOS kerap gagal menghitung `ingredient[].strength.
+    // denominator` → tersimpan {code:null, value:0, system:null} (setelah
+    // sanitasi generik jadi {value:0} tanpa system). TIGA aturan menolaknya:
+    //  (a) Rule 10028 "Invalid coding system" bila system null/kosong;
+    //  (b) FHIR Ratio rat-1 "(numerator.empty() xor denominator.exists()) and
+    //      (numerator.exists() or extension.exists())" — numerator & denominator
+    //      WAJIB sama-sama ada → denominator tak boleh dibuang; dan
+    //  (c) Rule 10028 juga menolak code UCUM tak sah (mis. "1" → "Code not found").
+    // Perbaikan: bila denominator rusak (hilang / tanpa system valid / value<=0),
+    // CERMIN unit numerator — salin `code` & `system` numerator (yang PASTI sah,
+    // karena numerator sendiri lolos validasi) ke denominator; nilai denominator
+    // dipertahankan bila >0, selain itu ikut nilai numerator (rasio 1). Ini persis
+    // konvensi baris yang SUDAH diterima Satu Sehat (mis. "25 mg / 25 mg").
+    // Numerator UCUM yang valid tidak disentuh.
+    if (spec.module === "medication") {
+      const payload = result.payload as Record<string, unknown>;
+      const ings = payload.ingredient;
+      if (Array.isArray(ings)) {
+        for (const ing of ings) {
+          if (!ing || typeof ing !== "object") continue;
+          const strength = (ing as Record<string, unknown>).strength;
+          if (!strength || typeof strength !== "object") continue;
+          const st = strength as Record<string, unknown>;
+          // Numerator harus punya code+system UCUM valid; kalau tidak, tak ada
+          // acuan yang bisa dicermin → biarkan apa adanya (tak muncul di data).
+          const num = st.numerator;
+          if (!num || typeof num !== "object") continue;
+          const numObj = num as Record<string, unknown>;
+          const numCode = numObj.code;
+          const numSys = numObj.system;
+          const numVal = numObj.value;
+          const numValidCode = typeof numCode === "string" && numCode.trim() !== "";
+          const numValidSys = typeof numSys === "string" && numSys.trim() !== "";
+          if (!numValidCode || !numValidSys) continue;
+
+          const den = st.denominator;
+          const denObj =
+            den && typeof den === "object" ? (den as Record<string, unknown>) : null;
+          const sys = denObj?.system;
+          const code = denObj?.code;
+          const val = denObj?.value;
+          const validSys = typeof sys === "string" && sys.trim() !== "";
+          const validCode = typeof code === "string" && code.trim() !== "";
+          const validVal = typeof val === "number" && val > 0;
+          if (!denObj || !validSys || !validCode || !validVal) {
+            st.denominator = {
+              value: validVal ? (val as number) : typeof numVal === "number" ? numVal : 1,
+              code: numCode,
+              system: numSys,
+            };
+            if (!enriched.includes("ingredient")) enriched.push("ingredient");
+          }
+        }
+      }
+    }
+
     return NextResponse.json(enriched.length ? { ...result, enriched } : result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gagal membaca data SIMGOS";

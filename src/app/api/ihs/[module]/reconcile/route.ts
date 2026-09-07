@@ -11,6 +11,7 @@ import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { reconcileLabObservationsBatch } from "@/app/lib/dal/lab-writeback";
 import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
+import { reconcileMedicationRefs } from "@/app/lib/dal/medication-writeback";
 
 const DEFAULT_BATCH = 1000;
 
@@ -35,6 +36,18 @@ export async function POST(
       return NextResponse.json({ updated, done: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Gagal reconcile Specimen";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
+  // Medication: sekali jalan — salin id Medication terkirim ke medicationReference
+  // pada MedicationRequest & MedicationDispense.
+  if (module === "medication") {
+    try {
+      const updated = await reconcileMedicationRefs();
+      return NextResponse.json({ updated, done: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Gagal reconcile Medication";
       return NextResponse.json({ error: msg }, { status: 502 });
     }
   }

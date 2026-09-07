@@ -177,6 +177,7 @@ export default function QuestionnaireResponsePage() {
           module="questionnaire-response"
           title="Data QuestionnaireResponse di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
           defaultOpen
         />
 

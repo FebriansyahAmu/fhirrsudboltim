@@ -164,6 +164,8 @@ export default function MedicationPage() {
           module="medication"
           title="Data Medication di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
+          enableMedicationReconcile
           defaultOpen
         />
 
