@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { simgosExecute } from "@/app/lib/db/simgos";
-import { upsertNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
+import { upsertNote, resolveKuningNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
 
 const REFID_RE = /^\d{10}$/;
 const IHS_ID_RE = /^[A-Za-z0-9.\-]{1,36}$/;
@@ -127,6 +127,19 @@ export async function handleEncounterPostResult(params: {
     }
     const updated = await updateEncounterIhsId(refId, ihsId);
     console.log(`[encounter writeback] refId=${refId} id=${ihsId} rows=${updated}`);
+    // Sukses & dapat id → bila baris ini sebelumnya "kuning" (Ditinjau, dari
+    // kegagalan kirim), tandai SELESAI (hijau). Idempotent; no-op bila tak ada.
+    try {
+      const n = await resolveKuningNote({
+        module: "encounter",
+        refKey: refId,
+        note: `Selesai — Encounter berhasil terkirim (id ${ihsId}).`,
+        userId,
+      });
+      if (n > 0) console.log(`[encounter note] refId=${refId} → SELESAI (kuning→hijau)`);
+    } catch (err) {
+      console.error(`[encounter note] gagal tandai selesai refId=${refId}:`, err);
+    }
     return { action: "writeback", refId };
   }
 
@@ -140,4 +153,35 @@ export async function handleEncounterPostResult(params: {
   });
   console.warn(`[encounter note] refId=${refId} status=${status} → catatan kuning`);
   return { action: "note", refId };
+}
+
+/**
+ * Proses hasil GET /Encounter: bila sukses (2xx) dan response memuat id + refId,
+ * tandai SELESAI catatan "kuning" pada baris itu (kuning→hijau). refId & id
+ * diekstrak dari RESPONSE (Encounter tak memakai ?module=&key=). Idempotent;
+ * no-op bila tak ada catatan kuning. Fire-and-forget.
+ */
+export async function handleEncounterGetResult(params: {
+  resource: string;
+  status: number;
+  responseData: unknown;
+  userId: string;
+}): Promise<void> {
+  const { resource, status, responseData, userId } = params;
+  if (resource !== "Encounter") return;
+  if (status < 200 || status >= 300) return;
+  const refId = extractEncounterRefId(responseData);
+  const ihsId = extractResourceId(responseData);
+  if (!refId || !ihsId) return;
+  try {
+    const n = await resolveKuningNote({
+      module: "encounter",
+      refKey: refId,
+      note: `Selesai — Encounter terkonfirmasi ada di Satu Sehat (id ${ihsId}).`,
+      userId,
+    });
+    if (n > 0) console.log(`[encounter note] refId=${refId} → SELESAI via GET (kuning→hijau)`);
+  } catch (err) {
+    console.error(`[encounter note] gagal tandai selesai (GET) refId=${refId}:`, err);
+  }
 }

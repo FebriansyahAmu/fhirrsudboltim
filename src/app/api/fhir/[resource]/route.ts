@@ -12,7 +12,10 @@ import {
   writeBackPatientRecord,
   nikFromIdentifierParam,
 } from "@/app/lib/dal/patient-writeback";
-import { handleEncounterPostResult } from "@/app/lib/dal/encounter-writeback";
+import {
+  handleEncounterPostResult,
+  handleEncounterGetResult,
+} from "@/app/lib/dal/encounter-writeback";
 import {
   maybeClinicalWriteBack,
   handleClinicalPostResult,
@@ -101,6 +104,15 @@ export async function GET(
     resource,
     status: result.status,
     responseData: result.data,
+    userId: session.userId,
+  });
+
+  // Encounter GET sukses & dapat id → tandai SELESAI catatan "kuning" (kalau ada).
+  await handleEncounterGetResult({
+    resource,
+    status: result.status,
+    responseData: result.data,
+    userId: session.userId,
   });
 
   return NextResponse.json(result.data, { status: result.status });

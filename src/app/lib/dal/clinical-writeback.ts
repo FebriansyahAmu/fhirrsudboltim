@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { simgosExecute } from "@/app/lib/db/simgos";
-import { upsertNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
+import { upsertNote, resolveKuningNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
 import {
   getModuleSpec,
   subjectRefOf,
@@ -217,6 +217,17 @@ function buildFailureNote(
 }
 
 /**
+ * id IHS valid dari response (resource langsung / entry tunggal Bundle) — sinyal
+ * bahwa resource ini SUDAH ADA di Satu Sehat (POST 2xx atau GET dapat id). null
+ * bila tak ada id valid.
+ */
+function successIhsId(responseData: unknown, resourceType: string): string | null {
+  const res = extractResource(responseData, resourceType);
+  const id = res && typeof res.id === "string" ? res.id.trim() : "";
+  return IHS_ID_RE.test(id) ? id : null;
+}
+
+/**
  * Gerbang write-back klinis untuk GET (by-id / search). Baca `?module=&key=`,
  * validasi, dan write-back bila sukses (2xx). Untuk MEMPERBAIKI baris yang
  * "terlanjur" terkirim. Fire-and-forget: kegagalan hanya di-log.
@@ -226,8 +237,9 @@ export async function maybeClinicalWriteBack(params: {
   resource: string;
   status: number;
   responseData: unknown;
+  userId: string;
 }): Promise<void> {
-  const { searchParams, resource, status, responseData } = params;
+  const { searchParams, resource, status, responseData, userId } = params;
   if (status < 200 || status >= 300) return;
   const t = resolveTarget(searchParams, resource);
   if (!t) return;
@@ -244,6 +256,25 @@ export async function maybeClinicalWriteBack(params: {
     }
   } catch (err) {
     console.error(`[clinical writeback] gagal update SIMGOS ${t.module}:`, err);
+  }
+  // GET sukses & dapat id → tandai SELESAI bila baris ini sebelumnya "kuning".
+  const ihsId = successIhsId(responseData, resource);
+  if (ihsId) {
+    try {
+      const n = await resolveKuningNote({
+        module: t.module,
+        refKey: t.key,
+        note: `Selesai — ${resource} terkonfirmasi ada di Satu Sehat (id ${ihsId}).`,
+        userId,
+      });
+      if (n > 0) {
+        console.log(
+          `[clinical note] module=${t.module} key=${t.key} → SELESAI via GET (kuning→hijau)`,
+        );
+      }
+    } catch (err) {
+      console.error(`[clinical note] gagal tandai selesai ${t.module}:`, err);
+    }
   }
 }
 
@@ -281,6 +312,27 @@ export async function handleClinicalPostResult(params: {
       }
     } catch (err) {
       console.error(`[clinical writeback] gagal update SIMGOS ${t.module}:`, err);
+    }
+    // Sukses & dapat id → bila baris ini sebelumnya "kuning" (Ditinjau, dari
+    // kegagalan kirim), tandai SELESAI (hijau). Idempotent; no-op bila tak ada
+    // catatan kuning. Tak menimpa penanda manual (merah/biru).
+    const ihsId = successIhsId(responseData, resource);
+    if (ihsId) {
+      try {
+        const n = await resolveKuningNote({
+          module: t.module,
+          refKey: t.key,
+          note: `Selesai — ${resource} berhasil terkirim (id ${ihsId}).`,
+          userId,
+        });
+        if (n > 0) {
+          console.log(
+            `[clinical note] module=${t.module} key=${t.key} → SELESAI (kuning→hijau)`,
+          );
+        }
+      } catch (err) {
+        console.error(`[clinical note] gagal tandai selesai ${t.module}:`, err);
+      }
     }
     return;
   }

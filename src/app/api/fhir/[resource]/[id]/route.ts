@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendToSatuSehat } from "@/app/lib/dal/fhir.dal";
 import { maybeClinicalWriteBack } from "@/app/lib/dal/clinical-writeback";
+import { handleEncounterGetResult } from "@/app/lib/dal/encounter-writeback";
 import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
 import { getSession } from "@/app/lib/session";
 import { isValidUUID } from "@/app/lib/utils/security";
@@ -59,6 +60,15 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     resource,
     status: result.status,
     responseData: result.data,
+    userId: session.userId,
+  });
+
+  // Encounter GET-by-id sukses & dapat id → tandai SELESAI catatan "kuning".
+  await handleEncounterGetResult({
+    resource,
+    status: result.status,
+    responseData: result.data,
+    userId: session.userId,
   });
 
   return NextResponse.json(result.data, { status: result.status });

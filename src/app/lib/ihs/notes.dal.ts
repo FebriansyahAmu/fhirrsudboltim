@@ -87,6 +87,30 @@ export async function deleteNote(module: string, refKey: string): Promise<void> 
   await prisma.ihs_row_notes.deleteMany({ where: { module, ref_key: refKey } });
 }
 
+/**
+ * Tandai SELESAI: bila baris (module, refKey) punya catatan "kuning" (Ditinjau —
+ * ditulis otomatis saat kirim GAGAL), ubah mark → "hijau" (Selesai) + tulis
+ * ringkasan sukses. HANYA menyentuh catatan yang MASIH "kuning" (via updateMany
+ * ber-guard) — TIDAK menimpa "merah"/"biru" yang di-set operator manual, maupun
+ * "hijau" yang sudah selesai. No-op (count 0) bila tak ada catatan kuning →
+ * idempotent, aman dipanggil di setiap kiriman/ GET sukses. Return jumlah baris
+ * yang diubah (0 atau 1).
+ */
+export async function resolveKuningNote(params: {
+  module: string;
+  refKey: string;
+  note?: string | null;
+  userId: string;
+}): Promise<number> {
+  const { module, refKey, note = null, userId } = params;
+  const trimmed = note != null && note.length > NOTE_MAX ? note.slice(0, NOTE_MAX) : note;
+  const res = await prisma.ihs_row_notes.updateMany({
+    where: { module, ref_key: refKey, mark: "kuning" },
+    data: { mark: "hijau", note: trimmed, created_by: userId },
+  });
+  return res.count;
+}
+
 export interface NoteCounts {
   total: number;
   merah: number;
