@@ -27,6 +27,7 @@ import {
 } from "@/app/lib/dal/specimen-writeback";
 import { maybeMarkServiceRequestSent } from "@/app/lib/dal/servicerequest-writeback";
 import { maybeMarkObservationSent } from "@/app/lib/dal/observation-writeback";
+import { maybeBuildEpisodeOfCareForCondition } from "@/app/lib/dal/episode-of-care-writeback";
 import {
   maybeMarkMedicationSent,
   maybeWriteBackMedicationRefs,
@@ -225,6 +226,18 @@ export async function POST(
   } catch (err) {
     console.error("[clinical] gagal memproses hasil POST:", err);
   }
+
+  // Condition: sukses (2xx) → bila diagnosis UTAMA yang KODE-nya ter-map di
+  // `diagnosa_to_eof`, bangun baris EpisodeOfCare (`eof`) via CALL proc
+  // `episodeOfCare` (id Condition sudah ditulis handleClinicalPostResult di
+  // atas). Menutup guard trigger `condition_after_update` yang null-unsafe
+  // (`NEW.id != OLD.id` = NULL saat id NULL→uuid) → tanpa ini `eof` kosong.
+  // Gerbang kelayakan & idempotensi ditangani di dalam fungsi.
+  await maybeBuildEpisodeOfCareForCondition({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
 
   // Observation LAB (jenis=6): sukses (2xx) → write-back code/value/interpretation
   // hasil rakit-ulang ke SIMGOS `observation` agar staging konsisten dgn yang

@@ -1175,6 +1175,39 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
     ],
   },
+
+  // ── EpisodeOfCare (episode perawatan / program penyakit) ──
+  // Baris `eof` dibangun proc `episodeOfCare` (dipicu app saat Condition dx-utama
+  // ber-kode EOC terkirim — lihat episode-of-care-writeback.ts). Resource ini
+  // merujuk Patient & Organization; TIDAK bergantung Encounter (justru Encounter
+  // yang merujuk EpisodeOfCare). Butuh `patient.reference` → "Menunggu Patient"
+  // bila kosong. PK `refId` (int, = medicalrecord.diagnosa.ID).
+  "episode-of-care": {
+    module: "episode-of-care",
+    resourceType: "EpisodeOfCare",
+    table: "eof",
+    keyCol: "refId",
+    keyLabel: "Ref EOC",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "patient", label: "Pasien", type: "text", jsonPath: "$.display" },
+      {
+        col: "type",
+        label: "Jenis",
+        type: "text",
+        jsonPath: "$[0].coding[0].display",
+      },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "period", label: "Mulai", type: "date", jsonPath: "$.start" },
+    ],
+    // Kolom internal SIMGOS (bukan field FHIR) — jangan ikut ke payload.
+    payloadExclude: ["type_eoc", "method_kirim"],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    // Bergantung Patient (bukan Encounter): "Menunggu Patient" bila ref kosong.
+    dependsOn: { refCol: "patient", refPath: "$.reference", label: "Patient" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

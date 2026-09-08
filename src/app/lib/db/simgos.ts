@@ -138,3 +138,40 @@ export async function simgosInsertEncounterRefId(refId: string): Promise<number>
     conn.release();
   }
 }
+
+/**
+ * Tulis TERSANKSI ke-3: bangun baris EpisodeOfCare di staging via CALL
+ * procedure `episodeOfCare(PID, PNOPEN)` — yang meng-INSERT `eof` bila belum
+ * ada (proc ber-`IF NOT EXISTS`, jadi idempotent).
+ *
+ * Kenapa perlu dipanggil dari sini: trigger SIMGOS `condition_after_update`
+ * yang SEHARUSNYA memanggil proc ini punya guard null-unsafe
+ * (`NEW.id != OLD.id`; pada kirim pertama id `NULL→uuid` → `uuid != NULL` =
+ * NULL = false), sehingga proc TAK PERNAH tereksekusi & tabel `eof` kosong
+ * total. Fungsi ini menutup celah itu: dipanggil untuk Condition (diagnosis
+ * UTAMA) yang KODE-nya terpetakan di `diagnosa_to_eof` DAN sudah terkirim.
+ * Kelayakan divalidasi oleh pemanggil (episode-of-care-writeback) via BACA,
+ * bukan di sini.
+ *
+ * Statement DIKUNCI (konstanta, satu proc, parameterized). `refId` = int (PK
+ * `medicalrecord.diagnosa`), `nopen` = 10 digit. CALL sembarang tetap ditolak
+ * pada `simgosQuery`/`simgosExecute` (bukan SELECT/UPDATE).
+ */
+export async function simgosCallEpisodeOfCare(
+  refId: number,
+  nopen: string,
+): Promise<void> {
+  if (!Number.isInteger(refId) || refId <= 0) {
+    throw new Error("refId EpisodeOfCare tidak valid untuk CALL");
+  }
+  if (!/^\d{10}$/.test(nopen)) {
+    throw new Error("nopen EpisodeOfCare tidak valid untuk CALL");
+  }
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.query("CALL `kemkes-ihs`.`episodeOfCare`(?, ?)", [refId, nopen]);
+  } finally {
+    conn.release();
+  }
+}
