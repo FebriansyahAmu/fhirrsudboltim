@@ -12,6 +12,7 @@ import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import {
   ALLOWED_RESOURCES,
   validateFhirPayload,
+  validateJsonPatch,
 } from "@/app/lib/constants/fhir";
 
 type RouteContext = { params: Promise<{ resource: string; id: string }> };
@@ -169,7 +170,12 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "Body tidak valid" }, { status: 400 });
   }
 
-  const validationError = validateFhirPayload(payload, resource);
+  // PATCH FHIR yang benar = JSON Patch (RFC 6902): body berupa ARRAY operasi.
+  // Terima juga body objek-resource (jalur lama) agar tak memutus pemakaian yang
+  // sudah ada. Content-type di DAL menyesuaikan bentuk body (array → json-patch).
+  const validationError = Array.isArray(payload)
+    ? validateJsonPatch(payload)
+    : validateFhirPayload(payload, resource);
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }

@@ -125,8 +125,14 @@ export async function handleEncounterPostResult(params: {
       console.warn(`[encounter writeback] refId=${refId} id response kosong — dilewati`);
       return { action: "skipped", refId };
     }
-    const updated = await updateEncounterIhsId(refId, ihsId);
-    console.log(`[encounter writeback] refId=${refId} id=${ihsId} rows=${updated}`);
+    // Write-back id ke SIMGOS — dibungkus agar kegagalannya (mis. koneksi DB)
+    // TIDAK menghalangi resolve catatan di DB kita (dua sistem independen).
+    try {
+      const updated = await updateEncounterIhsId(refId, ihsId);
+      console.log(`[encounter writeback] refId=${refId} id=${ihsId} rows=${updated}`);
+    } catch (err) {
+      console.error(`[encounter writeback] gagal update SIMGOS refId=${refId}:`, err);
+    }
     // Sukses & dapat id → bila baris ini sebelumnya "kuning" (Ditinjau, dari
     // kegagalan kirim), tandai SELESAI (hijau). Idempotent; no-op bila tak ada.
     try {

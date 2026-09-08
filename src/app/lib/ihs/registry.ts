@@ -1120,6 +1120,59 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
       { refCol: "result", refPath: "$[0].reference", label: "Observation" },
     ],
   },
+
+  // ── Composition (Resume Medis) ──
+  // Dokumen FHIR (discharge summary / resume medis). Kolom sudah FHIR-shaped
+  // (type/subject/encounter/author/section/…) dibangun ETL SIMGOS, jadi payload
+  // dirakit generik. Dependen Encounter + subject Patient (di-resolusi live bila
+  // kolomnya basi). DUA sumber terpisah:
+  //   • `composition`        → Resume Rawat Jalan. PK `refId` (int, unik).
+  //   • `composition_resume` → Resume Rawat Inap.  PK `nopen` (char, unik).
+  composition: {
+    module: "composition",
+    resourceType: "Composition",
+    table: "composition",
+    keyCol: "refId",
+    keyLabel: "Ref Resume",
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "title", label: "Judul", type: "text" },
+      { col: "type", label: "Jenis", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "date", label: "Tanggal", type: "date" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: [
+      { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+    ],
+  },
+
+  "composition-resume": {
+    module: "composition-resume",
+    resourceType: "Composition",
+    table: "composition_resume",
+    keyCol: "nopen",
+    keyLabel: "No. Pendaftaran",
+    readyFlag: "send",
+    orderCol: "nopen",
+    columns: [
+      { col: "title", label: "Judul", type: "text" },
+      { col: "type", label: "Jenis", type: "text", jsonPath: "$.coding[0].display" },
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "date", label: "Tanggal", type: "date" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    dependsOn: [
+      { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
+    ],
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {

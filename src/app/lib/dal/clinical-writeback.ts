@@ -2,7 +2,8 @@
 // ─────────────────────────────────────────────────────────────
 // Write-back hasil POST/GET resource KLINIS (CarePlan/Condition/Observation/
 // Procedure/ClinicalImpression/ServiceRequest/Specimen/AllergyIntolerance/
-// MedicationRequest/MedicationDispense/DiagnosticReport/QuestionnaireResponse)
+// MedicationRequest/MedicationDispense/DiagnosticReport/QuestionnaireResponse/
+// Composition)
 // yang SUKSES (2xx) ke tabel staging SIMGOS. GET (by-id / search Bundle) dipakai
 // untuk MEMPERBAIKI baris yang "terlanjur" terkirim sebelum ada write-back.
 //

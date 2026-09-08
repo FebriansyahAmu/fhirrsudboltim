@@ -1087,6 +1087,18 @@ export interface OrganizationPayload {
 }
 
 /**
+ * Composition (Resume Medis / discharge summary). Dokumen FHIR yang kompleks &
+ * bervariasi (section bertingkat, attester, custodian, dst.); payload di aplikasi
+ * ini datang dari autofill panel SIMGOS / Raw JSON, jadi tipe dibuat permisif —
+ * hanya `resourceType` yang dipatok.
+ */
+export interface CompositionPayload {
+  resourceType: "Composition";
+  id?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Kode jawaban valueCoding untuk Q0007.
  * Digunakan untuk pertanyaan dengan pilihan "Sesuai" atau "Tidak Sesuai".
  */

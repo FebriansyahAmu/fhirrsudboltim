@@ -19,6 +19,7 @@ const CLIENT_ALLOWED_RESOURCES = new Set([
   "AllergyIntolerance",
   "CarePlan",
   "ClinicalImpression",
+  "Composition",
   "Condition",
   "DiagnosticReport",
   "Encounter",

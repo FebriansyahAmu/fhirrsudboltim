@@ -88,13 +88,23 @@ export async function deleteNote(module: string, refKey: string): Promise<void> 
 }
 
 /**
- * Tandai SELESAI: bila baris (module, refKey) punya catatan "kuning" (Ditinjau —
- * ditulis otomatis saat kirim GAGAL), ubah mark → "hijau" (Selesai) + tulis
- * ringkasan sukses. HANYA menyentuh catatan yang MASIH "kuning" (via updateMany
- * ber-guard) — TIDAK menimpa "merah"/"biru" yang di-set operator manual, maupun
- * "hijau" yang sudah selesai. No-op (count 0) bila tak ada catatan kuning →
- * idempotent, aman dipanggil di setiap kiriman/ GET sukses. Return jumlah baris
- * yang diubah (0 atau 1).
+ * Penanda teks yang PASTI ditulis oleh catatan kegagalan OTOMATIS (buildFailureNote
+ * di clinical-writeback & encounter-writeback: "POST <Resource> gagal (HTTP …)").
+ * Dipakai untuk membedakan kuning-otomatis dari kuning-MANUAL (operator memilih
+ * "Ditinjau" sendiri lewat editor catatan) agar resolve tak menimpa teks operator.
+ */
+export const AUTO_FAIL_NOTE_MARKER = "gagal (HTTP ";
+
+/**
+ * Tandai SELESAI: bila baris (module, refKey) punya catatan "kuning" (Ditinjau)
+ * yang ditulis OTOMATIS saat kirim GAGAL, ubah mark → "hijau" (Selesai) + tulis
+ * ringkasan sukses. Aman & konservatif:
+ *   • HANYA baris ber-mark "kuning" (tak menyentuh merah/biru/hijau), DAN
+ *   • HANYA yang note-nya memuat penanda kegagalan otomatis
+ *     (`AUTO_FAIL_NOTE_MARKER`) → kuning yang di-set operator MANUAL dengan teks
+ *     sendiri TIDAK tersentuh (cegah kehilangan catatan operator).
+ * No-op (count 0) bila tak ada yang cocok → idempotent, aman dipanggil di setiap
+ * kiriman/ GET sukses. Return jumlah baris yang diubah (0 atau 1).
  */
 export async function resolveKuningNote(params: {
   module: string;
@@ -105,7 +115,12 @@ export async function resolveKuningNote(params: {
   const { module, refKey, note = null, userId } = params;
   const trimmed = note != null && note.length > NOTE_MAX ? note.slice(0, NOTE_MAX) : note;
   const res = await prisma.ihs_row_notes.updateMany({
-    where: { module, ref_key: refKey, mark: "kuning" },
+    where: {
+      module,
+      ref_key: refKey,
+      mark: "kuning",
+      note: { contains: AUTO_FAIL_NOTE_MARKER },
+    },
     data: { mark: "hijau", note: trimmed, created_by: userId },
   });
   return res.count;

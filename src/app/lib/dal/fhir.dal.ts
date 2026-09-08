@@ -56,7 +56,13 @@ export async function sendToSatuSehat(
     const response = await fetch(endpoint, {
       method,
       headers: {
-        "Content-Type": "application/json",
+        // PATCH ber-body ARRAY = JSON Patch (RFC 6902) → content-type khusus.
+        // Satu Sehat menolak JSON Patch ber-content-type application/json.
+        // Bentuk lain (termasuk PATCH objek jalur lama) tetap application/json.
+        "Content-Type":
+          method === "PATCH" && Array.isArray(payload)
+            ? "application/json-patch+json"
+            : "application/json",
         Authorization: `Bearer ${token}`,
       },
       body: payload ? JSON.stringify(payload) : undefined,

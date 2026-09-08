@@ -26,6 +26,7 @@ import {
   LuRadioTower,
   LuFilePenLine,
   LuTestTube,
+  LuFileText,
 } from "react-icons/lu";
 
 export const FHIR_MODULES: ModuleInfo[] = [
@@ -89,6 +90,15 @@ export const FHIR_MODULES: ModuleInfo[] = [
     path: "/condition",
     icon: LuActivity,
     desc: "Kondisi & diagnosis",
+    group: "Klinis",
+    methods: ["POST", "GET", "PUT", "PATCH"],
+    badge: "Active",
+  },
+  {
+    name: "Composition",
+    path: "/composition",
+    icon: LuFileText,
+    desc: "Resume medis (discharge summary)",
     group: "Klinis",
     methods: ["POST", "GET", "PUT", "PATCH"],
     badge: "Active",
