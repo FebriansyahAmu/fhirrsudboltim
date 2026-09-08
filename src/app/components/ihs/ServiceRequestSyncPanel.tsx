@@ -62,7 +62,9 @@ export default function ServiceRequestSyncPanel({
         </div>
       </div>
 
-      {/* Remount saat ganti tab (key) → state panel bersih & terbuka per jenis. */}
+      {/* Remount saat ganti tab (key) → state panel bersih & terbuka per jenis.
+          Tombol "Bangun Specimen & ImagingStudy" hanya di tab Laboratorium
+          (reconcile-nya tetap memproses SR lab & radiologi sekaligus). */}
       <ModuleSyncPanel
         key={kind}
         module={kind}
@@ -70,6 +72,7 @@ export default function ServiceRequestSyncPanel({
         onUsePayload={onUsePayload}
         enableQueue
         enableKeySearch
+        enableServiceRequestTrigger={kind === "servicerequest-lab"}
         defaultOpen
       />
     </div>

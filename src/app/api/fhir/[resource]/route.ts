@@ -22,6 +22,7 @@ import {
 } from "@/app/lib/dal/clinical-writeback";
 import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
 import { maybeWriteBackSpecimenForServiceRequest } from "@/app/lib/dal/specimen-writeback";
+import { maybeMarkServiceRequestSent } from "@/app/lib/dal/servicerequest-writeback";
 import {
   maybeMarkMedicationSent,
   maybeWriteBackMedicationRefs,
@@ -239,6 +240,19 @@ export async function POST(
     resource,
     status: result.status,
     responseData: result.data,
+  });
+
+  // ServiceRequest: sukses (2xx) → setel `service_request.send = 0` (id sudah
+  // ditulis handleClinicalPostResult di atas). Transisi send 1→0 memicu trigger
+  // SIMGOS `service_request_after_update` membangun Specimen (lab, JENIS=8) /
+  // ImagingStudy (radiologi, JENIS=7) yang hilang — otomatis merujuk SR ini
+  // karena id-nya sudah ada. Tanpa ini, specimen/imaging tak pernah dibuat
+  // (berhenti sejak ~10 Agu). Trigger swa-gerbang JENIS; SR lain hanya ditandai
+  // sent. Fungsi menangani error sendiri.
+  await maybeMarkServiceRequestSent({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
   });
 
   // Medication: sukses (2xx) → setel `medication.send = 0` (id sudah ditulis

@@ -220,6 +220,7 @@ export default function ModuleSyncPanel({
   enableLabRebuild = false,
   enableSpecimenReconcile = false,
   enableMedicationReconcile = false,
+  enableServiceRequestTrigger = false,
   enableJenisMedication = false,
 }: {
   module: string;
@@ -262,6 +263,13 @@ export default function ModuleSyncPanel({
    * MedicationDispense. Retroaktif/bulk, DB-only.
    */
   enableMedicationReconcile?: boolean;
+  /**
+   * ServiceRequest: PEMICU HILIR. Flip `send=0` pada SR lab/radiologi terkirim
+   * yang nyangkut `send=1` → trigger SIMGOS membangun Specimen / ImagingStudy
+   * yang hilang. Retroaktif (uji 1 → semua sisanya), DB-only. Pengiriman baru
+   * memicunya otomatis (maybeMarkServiceRequestSent); tombol ini utk tunggakan.
+   */
+  enableServiceRequestTrigger?: boolean;
   /**
    * Aktifkan sub-filter Jenis (Resep / Penyerahan) untuk modul `medication`:
    * jenis=1 → MedicationRequest (resep), jenis=2 → MedicationDispense
@@ -561,7 +569,18 @@ export default function ModuleSyncPanel({
           emptyMsg: "Tidak ada yang perlu diproses",
           pilot: true,
         }
-      : null;
+      : enableServiceRequestTrigger
+        ? {
+            btn: "Bangun Specimen & ImagingStudy",
+            confirm: "Uji buat 1 specimen dulu (ServiceRequest → send=0)?",
+            confirmBtn: "Ya, uji 1 dulu",
+            title:
+              "Untuk ServiceRequest lab/radiologi yang SUDAH terkirim tapi Specimen/ImagingStudy-nya belum dibuat SIMGOS (nyangkut send=1): setel send=0 → trigger membangun Specimen (lab) / ImagingStudy (radiologi) yang hilang, otomatis merujuk SR terkirim. UJI 1 baris terbaru dulu, cek hasilnya, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent. Pengiriman ServiceRequest baru sudah memicunya otomatis.",
+            noun: "specimen/imaging dibangun",
+            emptyMsg: "Tidak ada yang perlu diproses",
+            pilot: true,
+          }
+        : null;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
@@ -1523,7 +1542,7 @@ export default function ModuleSyncPanel({
                         type="button"
                         onClick={() => specReconRun()}
                         disabled={loading || busy}
-                        title="Proses SEMUA Medication terkirim yang masih nyangkut (send=1) → buat resep/penyerahan yang hilang."
+                        title="Proses SEMUA baris terkirim yang masih nyangkut (send=1) → bangun data hilir yang hilang di SIMGOS."
                         className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <LuDatabase className="h-3.5 w-3.5" />

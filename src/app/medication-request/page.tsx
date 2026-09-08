@@ -159,11 +159,14 @@ export default function MedicationRequestPage() {
           </span>
         </div>
 
-        {/* ── SIMGOS: status kirim (read-only, filter tanggal, autofill) ── */}
+        {/* ── SIMGOS: status kirim (read-only, filter tanggal, autofill) ──
+            Kirim Antrian + Auto-kirim: hanya baris BELUM terkirim & tak
+            menunggu referensi; baris gagal dilewati (tak diulang). */}
         <ModuleSyncPanel
           module="medication-request"
           title="Data MedicationRequest di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
           defaultOpen
         />
 

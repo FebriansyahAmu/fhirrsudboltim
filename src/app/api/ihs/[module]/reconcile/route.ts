@@ -11,6 +11,7 @@ import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { reconcileLabObservationsBatch } from "@/app/lib/dal/lab-writeback";
 import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
+import { reconcileServiceRequestSendFlags } from "@/app/lib/dal/servicerequest-writeback";
 import {
   reconcileMedicationRefs,
   reconcileMedicationSendFlags,
@@ -76,6 +77,30 @@ export async function POST(
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Gagal reconcile Medication";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
+  // ServiceRequest (semua jenis): PEMICU HILIR — flip `send=0` pada SR lab
+  // (JENIS=8) & radiologi (JENIS=7) terkirim yang nyangkut `send=1` → trigger
+  // SIMGOS `service_request_after_update` membangun Specimen / ImagingStudy yang
+  // hilang (tunggakan sejak ~10 Agu). `limit` (opsional) → UJI N baris terbaru
+  // dulu sebelum batch penuh.
+  if (module.startsWith("servicerequest")) {
+    let limit: number | undefined;
+    try {
+      const body = (await request.json()) as { limit?: unknown };
+      const l = Number(body?.limit);
+      if (Number.isFinite(l) && l > 0) limit = Math.floor(l);
+    } catch {
+      // tanpa body → batch penuh.
+    }
+    try {
+      const updated = await reconcileServiceRequestSendFlags(limit);
+      return NextResponse.json({ updated, pilot: limit != null, done: true });
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "Gagal reconcile ServiceRequest";
       return NextResponse.json({ error: msg }, { status: 502 });
     }
   }
