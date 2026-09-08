@@ -237,6 +237,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dependsOn: { refCol: "encounter", refPath: "$.reference", label: "Encounter" },
     // Subject Pasien di kolom `patient` (bukan `subject`) — override default.
     subjectRef: { refCol: "patient", refPath: "$.reference", label: "Patient" },
+    // Filter tanggal via prefix yymmdd pada No. Pendaftaran (nopen, 10 digit).
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
   },
 
   // ── ServiceRequest: satu resource, beberapa jenis tindakan ──

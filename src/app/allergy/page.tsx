@@ -198,6 +198,7 @@ export default function AllergyIntolerancePage() {
           module="allergy"
           title="Data Alergi di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
         />
 
         {/* ── 2. Method Tabs ── */}
