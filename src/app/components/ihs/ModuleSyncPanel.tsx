@@ -94,6 +94,19 @@ interface SyncResponse {
   dateFrom?: string | null;
   dateTo?: string | null;
 }
+/**
+ * Info de-stale Composition: `section` dirakit ulang dari id terkini (buang
+ * entry null / section kosong). `original` = section tersimpan apa adanya, agar
+ * form bisa REVERT tanpa fetch ulang.
+ */
+export interface DestaleInfo {
+  original: unknown;
+  changes: string[];
+  recovered: string[];
+  emptied: string[];
+  nullRefsRemoved: number;
+}
+
 interface PayloadResponse {
   resourceType: string;
   payload: unknown;
@@ -101,6 +114,8 @@ interface PayloadResponse {
   missing?: string[];
   /** Field yang dilengkapi otomatis server-side (mis. Encounter.participant/DPJP). */
   enriched?: string[];
+  /** Hanya Composition: hasil rakit-ulang `section` + section asli untuk revert. */
+  destale?: DestaleInfo;
 }
 
 type PayloadSource = "staging" | "master";
@@ -219,6 +234,7 @@ export default function ModuleSyncPanel({
     payload: unknown,
     resourceType: string,
     source?: { module: string; key: string },
+    destale?: DestaleInfo,
   ) => void;
   /**
    * Aktifkan tombol "Kirim Antrian": POST berurutan semua baris HALAMAN ini
@@ -450,7 +466,13 @@ export default function ModuleSyncPanel({
       setCopied(false);
       setPayloadLoading(true);
       try {
-        const qs = source === "master" ? "?source=master" : "";
+        // Composition: minta superset "fill" (semua section, kosong diisi
+        // placeholder) agar form bisa beralih Lengkap ⇄ Ringkas ⇄ Asli tanpa
+        // fetch ulang. Modul lain tak terpengaruh param ini.
+        const qp = new URLSearchParams();
+        if (source === "master") qp.set("source", "master");
+        if (module.startsWith("composition")) qp.set("empty", "fill");
+        const qs = qp.toString() ? `?${qp}` : "";
         const res = await fetch(
           `/api/ihs/${module}/${encodeURIComponent(key)}${qs}`,
           { credentials: "same-origin" },
@@ -631,10 +653,12 @@ export default function ModuleSyncPanel({
 
   const handleAutofill = () => {
     if (payloadData && onUsePayload) {
-      onUsePayload(payloadData.payload, payloadData.resourceType, {
-        module,
-        key: payloadKey ?? "",
-      });
+      onUsePayload(
+        payloadData.payload,
+        payloadData.resourceType,
+        { module, key: payloadKey ?? "" },
+        payloadData.destale,
+      );
       setPayloadKey(null);
     }
   };

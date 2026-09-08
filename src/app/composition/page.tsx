@@ -17,6 +17,7 @@ import CompositionForm from "@/app/components/modules/composition/CompositionFor
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
 import CompositionSyncPanel from "@/app/components/ihs/CompositionSyncPanel";
+import type { DestaleInfo } from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { CompositionPayload } from "@/app/lib/types/fhir";
@@ -67,6 +68,7 @@ export default function CompositionPage() {
   const [autofillRaw, setAutofillRaw] = useState<{
     json: string;
     nonce: number;
+    destale?: DestaleInfo | null;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<{ module: string; key: string } | null>(null);
@@ -84,11 +86,16 @@ export default function CompositionPage() {
     payload: unknown,
     _resourceType?: string,
     source?: { module: string; key: string },
+    destale?: DestaleInfo,
   ) => {
     sourceRef.current = source ?? null;
     setActiveMethod("POST");
     resetResponse();
-    setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
+    setAutofillRaw({
+      json: JSON.stringify(payload, null, 2),
+      nonce: Date.now(),
+      destale: destale ?? null,
+    });
     setTimeout(
       () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
       60,

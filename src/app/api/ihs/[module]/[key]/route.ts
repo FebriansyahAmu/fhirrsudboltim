@@ -15,6 +15,11 @@ import {
 } from "@/app/lib/ihs/encounter-subject";
 import { resolveEncounterRefByNopen } from "@/app/lib/ihs/encounter-ref";
 import { resolveLabRebuildByRefId } from "@/app/lib/ihs/lab-loinc";
+import {
+  destaleCompositionSection,
+  pruneCompositionSectionArray,
+  type EmptyMode,
+} from "@/app/lib/ihs/composition-section";
 import { subjectRefOf } from "@/app/lib/ihs/registry";
 import type { DependsRef } from "@/app/lib/ihs/registry";
 
@@ -248,7 +253,71 @@ export async function GET(
       }
     }
 
-    return NextResponse.json(enriched.length ? { ...result, enriched } : result);
+    // Composition (Resume Medis): `section` tersimpan bisa BASI — di-materialize
+    // sekali oleh prosedur SIMGOS saat resource rujukan belum punya id, lalu
+    // beku. Rakit ulang read-only dari id TERKINI + buang entry null/section
+    // kosong (lihat composition-section.ts) agar lolos FHIR cmp-1. Non-destruktif:
+    //   • ?rebuild=0 → lewati (kembalikan section ASLI apa adanya, untuk revert).
+    //   • ?empty=drop → section yang tetap kosong DIBUANG (default: fill/placeholder).
+    // Respons menyertakan `destale.original` agar UI bisa revert tanpa fetch ulang.
+    let destale: {
+      original: unknown;
+      changes: string[];
+      recovered: string[];
+      emptied: string[];
+      nullRefsRemoved: number;
+    } | null = null;
+    if (spec.resourceType === "Composition") {
+      const doRebuild = request.nextUrl.searchParams.get("rebuild") !== "0";
+      // Default "fill": section yang tetap kosong diisi placeholder agar
+      // struktur resume utuh. `?empty=drop` untuk hanya mengirim section berisi.
+      const mode: EmptyMode =
+        request.nextUrl.searchParams.get("empty") === "drop" ? "drop" : "fill";
+      if (doRebuild) {
+        const payload = result.payload as Record<string, unknown>;
+        const originalSection = payload.section;
+        // Rawat Inap punya prosedur rakit-ulang (by nopen). Rawat Jalan / fallback:
+        // prune-only pada section yang sudah ada.
+        if (spec.module === "composition-resume" && result.nopen) {
+          const ds = await destaleCompositionSection(
+            result.nopen,
+            originalSection,
+            mode,
+          );
+          if (ds) {
+            payload.section = ds.section;
+            if (!enriched.includes("section")) enriched.push("section");
+            destale = {
+              original: originalSection ?? null,
+              changes: ds.changes,
+              recovered: ds.recovered,
+              emptied: ds.emptied,
+              nullRefsRemoved: ds.nullRefsRemoved,
+            };
+          }
+        } else {
+          const pr = pruneCompositionSectionArray(originalSection, mode);
+          if (pr) {
+            payload.section = pr.section;
+            if (!enriched.includes("section")) enriched.push("section");
+            destale = {
+              original: originalSection ?? null,
+              changes: pr.nullRefsRemoved
+                ? [`Referensi null dibuang: ${pr.nullRefsRemoved}`]
+                : ["Section dibersihkan"],
+              recovered: [],
+              emptied: [],
+              nullRefsRemoved: pr.nullRefsRemoved,
+            };
+          }
+        }
+      }
+    }
+
+    const body: Record<string, unknown> = { ...result };
+    if (enriched.length) body.enriched = enriched;
+    if (destale) body.destale = destale;
+    return NextResponse.json(body);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Gagal membaca data SIMGOS";
     return NextResponse.json({ error: msg }, { status: 502 });
