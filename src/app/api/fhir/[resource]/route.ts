@@ -21,8 +21,12 @@ import {
   handleClinicalPostResult,
 } from "@/app/lib/dal/clinical-writeback";
 import { maybeLabObservationWriteBack } from "@/app/lib/dal/lab-writeback";
-import { maybeWriteBackSpecimenForServiceRequest } from "@/app/lib/dal/specimen-writeback";
+import {
+  maybeWriteBackSpecimenForServiceRequest,
+  maybeMarkSpecimenSent,
+} from "@/app/lib/dal/specimen-writeback";
 import { maybeMarkServiceRequestSent } from "@/app/lib/dal/servicerequest-writeback";
+import { maybeMarkObservationSent } from "@/app/lib/dal/observation-writeback";
 import {
   maybeMarkMedicationSent,
   maybeWriteBackMedicationRefs,
@@ -232,6 +236,17 @@ export async function POST(
     status: result.status,
   });
 
+  // Observation lab/rad (jenis 6/7): sukses (2xx) → setel `observation.send = 0`
+  // (id sudah ditulis handleClinicalPostResult di atas). Transisi send 1→0
+  // memicu trigger SIMGOS `observation_after_update` membangun DiagnosticReport
+  // yang hilang. Tanpa ini, DiagnosticReport tak pernah dibuat (berhenti ~31
+  // Jul). Hanya jenis 6/7; jenis lain diabaikan. Fungsi menangani error sendiri.
+  await maybeMarkObservationSent({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
+
   // ServiceRequest LAB: sukses (2xx) → propagasikan IHS id-nya ke `specimen.request`
   // (specimen.refId = SR.refId) agar Specimen bisa merujuk SR yang baru terkirim.
   // No-op utk SR non-LAB. Fungsi sudah menangani error sendiri.
@@ -250,6 +265,17 @@ export async function POST(
   // (berhenti sejak ~10 Agu). Trigger swa-gerbang JENIS; SR lain hanya ditandai
   // sent. Fungsi menangani error sendiri.
   await maybeMarkServiceRequestSent({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
+
+  // Specimen: sukses (2xx) → setel `specimen.send = 0` (id sudah ditulis
+  // handleClinicalPostResult di atas). Transisi send 1→0 memicu trigger SIMGOS
+  // `specimen_after_update` → hasillabToObservation → membangun Observation
+  // hasil lab yang hilang (lalu Observation memicu DiagnosticReport saat dikirim).
+  // Tanpa ini, rantai lab terputus. Fungsi menangani error sendiri.
+  await maybeMarkSpecimenSent({
     searchParams: request.nextUrl.searchParams,
     resource,
     status: result.status,

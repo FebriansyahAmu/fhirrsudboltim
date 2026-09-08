@@ -10,8 +10,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
 import { checkRateLimit, RATE_LIMITS } from "@/app/lib/rate-limit";
 import { reconcileLabObservationsBatch } from "@/app/lib/dal/lab-writeback";
-import { reconcileSpecimenRequestRefs } from "@/app/lib/dal/specimen-writeback";
+import {
+  reconcileSpecimenRequestRefs,
+  reconcileSpecimenSendFlags,
+} from "@/app/lib/dal/specimen-writeback";
 import { reconcileServiceRequestSendFlags } from "@/app/lib/dal/servicerequest-writeback";
+import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeback";
 import {
   reconcileMedicationRefs,
   reconcileMedicationSendFlags,
@@ -34,9 +38,26 @@ export async function POST(
 
   const { module } = await params;
 
-  // Specimen: sekali jalan (satu UPDATE join) — salin id SR terkirim ke request.
+  // Specimen: DUA aksi.
+  //   • action="trigger" → PEMICU HILIR: flip `send=0` pada Specimen terkirim
+  //     yang nyangkut send=1 → trigger membangun Observation lab (`limit` = UJI).
+  //   • default → salin id SR terkirim ke `specimen.request` (sekali jalan).
   if (module === "specimen") {
+    let action: string | undefined;
+    let limit: number | undefined;
     try {
+      const body = (await request.json()) as { action?: unknown; limit?: unknown };
+      if (typeof body?.action === "string") action = body.action;
+      const l = Number(body?.limit);
+      if (Number.isFinite(l) && l > 0) limit = Math.floor(l);
+    } catch {
+      // tanpa body → aksi default.
+    }
+    try {
+      if (action === "trigger") {
+        const updated = await reconcileSpecimenSendFlags(limit);
+        return NextResponse.json({ updated, pilot: limit != null, done: true });
+      }
       const updated = await reconcileSpecimenRequestRefs();
       return NextResponse.json({ updated, done: true });
     } catch (e) {
@@ -115,12 +136,19 @@ export async function POST(
   // cursor & batchSize dari body (opsional) atau query string.
   let cursor = 0;
   let batchSize = DEFAULT_BATCH;
+  let action: string | undefined;
+  let trigLimit: number | undefined;
   try {
     const body = (await request.json()) as {
       cursor?: unknown;
       batchSize?: unknown;
+      action?: unknown;
+      limit?: unknown;
     };
     if (body && typeof body === "object") {
+      if (typeof body.action === "string") action = body.action;
+      const tl = Number(body.limit);
+      if (Number.isFinite(tl) && tl > 0) trigLimit = Math.floor(tl);
       const c = Number(body.cursor);
       if (Number.isFinite(c) && c >= 0) cursor = Math.floor(c);
       const b = Number(body.batchSize);
@@ -130,6 +158,21 @@ export async function POST(
     // tanpa body → pakai default (mulai dari awal).
   }
 
+  // Observation: action="trigger" → PEMICU HILIR: flip `send=0` pada Observation
+  // lab/rad (jenis 6/7) terkirim yang nyangkut send=1 → trigger SIMGOS membangun
+  // DiagnosticReport yang hilang (`limit` = UJI N baris terbaru).
+  if (action === "trigger") {
+    try {
+      const updated = await reconcileObservationSendFlags(trigLimit);
+      return NextResponse.json({ updated, pilot: trigLimit != null, done: true });
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "Gagal reconcile Observation";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
+  // default → rakit ulang LOINC (batch by cursor refId).
   try {
     const res = await reconcileLabObservationsBatch(cursor, batchSize);
     return NextResponse.json(res);

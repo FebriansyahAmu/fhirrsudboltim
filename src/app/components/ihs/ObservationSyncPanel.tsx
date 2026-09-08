@@ -63,7 +63,9 @@ export default function ObservationSyncPanel({
         </div>
       </div>
 
-      {/* Remount saat ganti tab (key) → state panel bersih & terbuka per jenis. */}
+      {/* Remount saat ganti tab (key) → state panel bersih & terbuka per jenis.
+          Tombol "Bangun DiagnosticReport" hanya di tab Umum/TTV (tempat hasil lab
+          jenis=6 berada); reconcile-nya memproses Observation lab & radiologi. */}
       <ModuleSyncPanel
         key={kind}
         module={kind}
@@ -71,6 +73,7 @@ export default function ObservationSyncPanel({
         onUsePayload={onUsePayload}
         enableQueue
         enableLabRebuild={kind === "observation"}
+        enableObservationTrigger={kind === "observation"}
         defaultOpen
       />
     </div>

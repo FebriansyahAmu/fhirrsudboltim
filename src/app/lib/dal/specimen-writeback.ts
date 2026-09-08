@@ -82,6 +82,78 @@ export async function reconcileSpecimenRequestRefs(): Promise<number> {
   return simgosExecute(sql, [UUID_RE_SQL]);
 }
 
+// ─────────────────────────────────────────────────────────────
+// PEMICU HILIR Specimen → Observation (hasil lab).
+// Trigger SIMGOS `specimen_after_update` menyala saat `specimen.send` beralih
+// 1→0 dengan id ada → CALL hasillabToObservation(refId) → membangun Observation
+// hasil lab. Pola sama dgn ServiceRequest/Medication: app harus flip send=0
+// setelah Specimen terkirim (SIMGOS tak lagi melakukannya). Tanpa ini,
+// Observation lab (dan DiagnosticReport di hilirnya) tak pernah dibuat.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * FORWARD: setel `specimen.send = 0` untuk satu Specimen (refId) yang SUDAH
+ * terkirim (id UUID) & masih `send=1` → trigger membangun Observation hasil lab.
+ */
+export async function markSpecimenSent(refId: string): Promise<number> {
+  if (!REFID_RE.test(refId)) return 0;
+  const sql =
+    "UPDATE `kemkes-ihs`.`specimen` SET `send` = 0 " +
+    "WHERE `refId` = ? AND `send` = 1 AND `id` REGEXP ?";
+  return simgosExecute(sql, [refId, UUID_RE_SQL]);
+}
+
+/**
+ * Gerbang dari route POST /api/fhir setelah Specimen SUKSES (2xx). Baca
+ * `?key=<refId>` lalu flip send=0 → trigger membangun Observation hasil lab.
+ * DIPANGGIL SESUDAH write-back id. Fire-and-forget: kegagalan hanya di-log.
+ */
+export async function maybeMarkSpecimenSent(params: {
+  searchParams: URLSearchParams;
+  resource: string;
+  status: number;
+}): Promise<void> {
+  const { searchParams, resource, status } = params;
+  if (status < 200 || status >= 300) return;
+  if (resource !== "Specimen") return;
+  const refId = searchParams.get("key");
+  if (!refId || !REFID_RE.test(refId)) return;
+  try {
+    const n = await markSpecimenSent(refId);
+    if (n > 0) {
+      console.log(
+        `[specimen send-flag] refId=${refId} send→0 (${n}) → memicu Observation lab`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[specimen send-flag] gagal set send=0 utk refId=${refId}:`,
+      err,
+    );
+  }
+}
+
+/**
+ * RECONCILE (retroaktif): balik `send=0` untuk Specimen terkirim (id UUID) yang
+ * nyangkut `send=1` → trigger membangun Observation lab yang hilang. `limit`
+ * (opsional) → UJI N baris terbaru dulu. UPDATE satu-tabel → boleh ORDER/LIMIT.
+ * Idempotent (hanya send=1). Tanpa Satu Sehat. Return baris flip.
+ */
+export async function reconcileSpecimenSendFlags(
+  limit?: number,
+): Promise<number> {
+  const base =
+    "UPDATE `kemkes-ihs`.`specimen` SET `send` = 0 " +
+    "WHERE `id` REGEXP ? AND `send` = 1";
+  if (limit && limit > 0) {
+    return simgosExecute(base + " ORDER BY `nopen` DESC LIMIT ?", [
+      UUID_RE_SQL,
+      limit,
+    ]);
+  }
+  return simgosExecute(base, [UUID_RE_SQL]);
+}
+
 /**
  * Gerbang: dipanggil dari route POST /api/fhir setelah ServiceRequest LAB
  * SUKSES (2xx). Baca `?module=servicerequest-lab&key=<refId>` + id dari response,

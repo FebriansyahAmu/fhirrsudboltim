@@ -166,6 +166,7 @@ export default function DiagnosticReportPage() {
           module="diagnostic-report"
           title="Data DiagnosticReport di SIMGOS"
           onUsePayload={handleUsePayload}
+          enableQueue
           defaultOpen
         />
 

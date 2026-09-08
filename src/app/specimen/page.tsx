@@ -163,6 +163,7 @@ export default function SpecimenPage() {
           onUsePayload={handleUsePayload}
           enableQueue
           enableSpecimenReconcile
+          enableSpecimenTrigger
         />
 
         {/* ── 2. Method Tabs ── */}

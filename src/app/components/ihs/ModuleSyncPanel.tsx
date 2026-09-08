@@ -210,6 +210,19 @@ function cellClass(type: string): string {
   return "text-slate-700";
 }
 
+/** Konfigurasi satu tombol reconcile (retroaktif, DB-only). `body` = payload
+ *  tambahan (mis. { action: "trigger" }) untuk memilih aksi di route bersama. */
+type ReconcileCfg = {
+  btn: string;
+  confirm: string;
+  confirmBtn: string;
+  title: string;
+  noun: string;
+  emptyMsg: string;
+  pilot: boolean;
+  body?: Record<string, unknown>;
+};
+
 export default function ModuleSyncPanel({
   module,
   title,
@@ -221,6 +234,8 @@ export default function ModuleSyncPanel({
   enableSpecimenReconcile = false,
   enableMedicationReconcile = false,
   enableServiceRequestTrigger = false,
+  enableSpecimenTrigger = false,
+  enableObservationTrigger = false,
   enableJenisMedication = false,
 }: {
   module: string;
@@ -270,6 +285,18 @@ export default function ModuleSyncPanel({
    * memicunya otomatis (maybeMarkServiceRequestSent); tombol ini utk tunggakan.
    */
   enableServiceRequestTrigger?: boolean;
+  /**
+   * Specimen: PEMICU HILIR (tombol KEDUA, di samping "Sesuaikan Specimen").
+   * Flip `specimen.send=0` pada Specimen terkirim yang nyangkut → trigger SIMGOS
+   * membangun Observation hasil lab. Retroaktif (uji 1 → semua sisanya), DB-only.
+   */
+  enableSpecimenTrigger?: boolean;
+  /**
+   * Observation: PEMICU HILIR. Flip `observation.send=0` pada Observation lab/rad
+   * (jenis 6/7) terkirim yang nyangkut → trigger SIMGOS membangun DiagnosticReport.
+   * Retroaktif (uji 1 → semua sisanya), DB-only. Pengiriman baru memicunya otomatis.
+   */
+  enableObservationTrigger?: boolean;
   /**
    * Aktifkan sub-filter Jenis (Resep / Penyerahan) untuk modul `medication`:
    * jenis=1 → MedicationRequest (resep), jenis=2 → MedicationDispense
@@ -414,6 +441,15 @@ export default function ModuleSyncPanel({
   // "Jalankan semua sisanya" untuk batch penuh.
   const [specReconPilotDone, setSpecReconPilotDone] = useState(false);
 
+  // Tombol PEMICU HILIR KEDUA (triggerCfg) — state terpisah dari reconcileCfg
+  // di atas, agar kedua tombol (mis. "Sesuaikan Specimen" + "Bangun Observation")
+  // bisa hidup berdampingan di panel Specimen.
+  const [trigRunning, setTrigRunning] = useState(false);
+  const [trigArmed, setTrigArmed] = useState(false);
+  const [trigResult, setTrigResult] = useState<number | null>(null);
+  const [trigError, setTrigError] = useState<string | null>(null);
+  const [trigPilotDone, setTrigPilotDone] = useState(false);
+
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -543,11 +579,17 @@ export default function ModuleSyncPanel({
   // Kontrol yang memicu muat-ulang dikunci selama auto-kirim/antrian berjalan
   // (agar tidak balapan dengan loop pengiriman yang meng-setData langsung).
   const busy =
-    autoRunning || queueRunning || rePutRunning || reconRunning || specReconRunning;
+    autoRunning ||
+    queueRunning ||
+    rePutRunning ||
+    reconRunning ||
+    specReconRunning ||
+    trigRunning;
 
-  // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only) — Specimen atau
-  // Medication. Runner-nya generik (POST ke /api/ihs/<module>/reconcile).
-  const reconcileCfg = enableSpecimenReconcile
+  // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only). Runner generik
+  // (POST ke /api/ihs/<module>/reconcile). `body` = payload tambahan (mis.
+  // { action: "trigger" } untuk memilih aksi PEMICU HILIR di route bersama).
+  const reconcileCfg: ReconcileCfg | null = enableSpecimenReconcile
     ? {
         btn: "Sesuaikan Specimen",
         confirm: "Tulis id ServiceRequest terkirim ke Specimen?",
@@ -580,7 +622,35 @@ export default function ModuleSyncPanel({
             emptyMsg: "Tidak ada yang perlu diproses",
             pilot: true,
           }
-        : null;
+        : enableObservationTrigger
+          ? {
+              btn: "Bangun DiagnosticReport",
+              confirm: "Uji buat 1 laporan dulu (Observation → send=0)?",
+              confirmBtn: "Ya, uji 1 dulu",
+              title:
+                "Untuk Observation lab/radiologi yang SUDAH terkirim tapi DiagnosticReport-nya belum dibuat SIMGOS (nyangkut send=1): setel send=0 → trigger membangun DiagnosticReport. UJI 1 baris terbaru dulu, cek hasilnya, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent. Pengiriman Observation baru sudah memicunya otomatis.",
+              noun: "laporan dibangun",
+              emptyMsg: "Tidak ada yang perlu diproses",
+              pilot: true,
+              body: { action: "trigger" },
+            }
+          : null;
+
+  // Tombol PEMICU HILIR KEDUA (khusus panel Specimen): flip specimen.send=0 →
+  // bangun Observation. Terpisah dari "Sesuaikan Specimen" (ref-copy) di atas.
+  const triggerCfg: ReconcileCfg | null = enableSpecimenTrigger
+    ? {
+        btn: "Bangun Observation",
+        confirm: "Uji buat 1 observasi dulu (Specimen → send=0)?",
+        confirmBtn: "Ya, uji 1 dulu",
+        title:
+          "Untuk Specimen yang SUDAH terkirim tapi Observation hasil lab-nya belum dibuat SIMGOS (nyangkut send=1): setel send=0 → trigger membangun Observation lab (lalu Observation memicu DiagnosticReport saat dikirim). UJI 1 baris terbaru dulu, cek, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent. Pengiriman Specimen baru sudah memicunya otomatis.",
+        noun: "observasi dibangun",
+        emptyMsg: "Tidak ada yang perlu diproses",
+        pilot: true,
+        body: { action: "trigger" },
+      }
+    : null;
 
   const changeFilter = (f: SyncFilter) => {
     if (busy) return;
@@ -1291,7 +1361,7 @@ export default function ModuleSyncPanel({
   // `limit` diisi hanya untuk mode UJI (pilot) Medication — proses N baris
   // terbaru dulu. Tanpa `limit` = batch penuh.
   const specReconRun = useCallback(
-    async (limit?: number) => {
+    async (limit?: number, body?: Record<string, unknown>) => {
       if (busy) return;
       setSpecReconArmed(false);
       setSpecReconRunning(true);
@@ -1302,7 +1372,7 @@ export default function ModuleSyncPanel({
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           credentials: "same-origin",
-          body: JSON.stringify(limit ? { limit } : {}),
+          body: JSON.stringify({ ...(body ?? {}), ...(limit ? { limit } : {}) }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -1323,6 +1393,39 @@ export default function ModuleSyncPanel({
     [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
   );
 
+  // Runner tombol PEMICU HILIR KEDUA (triggerCfg) — sejajar specReconRun, state
+  // terpisah, selalu mengirim body { action: "trigger" }.
+  const trigRun = useCallback(
+    async (limit?: number) => {
+      if (busy) return;
+      setTrigArmed(false);
+      setTrigRunning(true);
+      setTrigResult(null);
+      setTrigError(null);
+      try {
+        const res = await fetch(`/api/ihs/${module}/reconcile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ action: "trigger", ...(limit ? { limit } : {}) }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setTrigError(json?.error ?? "Gagal memproses");
+        } else {
+          setTrigResult(Number(json?.updated ?? 0));
+          setTrigPilotDone(limit != null);
+        }
+      } catch {
+        setTrigError("Gagal menghubungi server");
+      } finally {
+        setTrigRunning(false);
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+      }
+    },
+    [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
+
   // Reset kontrol antrian saat pindah filter/halaman/tanggal/pencarian.
   useEffect(() => {
     setQueueArmed(false);
@@ -1333,6 +1436,8 @@ export default function ModuleSyncPanel({
     setReconArmed(false);
     setSpecReconArmed(false);
     setSpecReconPilotDone(false);
+    setTrigArmed(false);
+    setTrigPilotDone(false);
   }, [filter, page, noteFilter, dateFrom, dateTo, keyQuery, jenis]);
 
   const eligibleCount = data
@@ -1489,7 +1594,9 @@ export default function ModuleSyncPanel({
                         <button
                           type="button"
                           onClick={() =>
-                            reconcileCfg.pilot ? specReconRun(1) : specReconRun()
+                            reconcileCfg.pilot
+                              ? specReconRun(1, reconcileCfg.body)
+                              : specReconRun(undefined, reconcileCfg.body)
                           }
                           className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-700"
                         >
@@ -1540,7 +1647,7 @@ export default function ModuleSyncPanel({
                     !specReconRunning && (
                       <button
                         type="button"
-                        onClick={() => specReconRun()}
+                        onClick={() => specReconRun(undefined, reconcileCfg.body)}
                         disabled={loading || busy}
                         title="Proses SEMUA baris terkirim yang masih nyangkut (send=1) → bangun data hilir yang hilang di SIMGOS."
                         className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1552,6 +1659,85 @@ export default function ModuleSyncPanel({
                   {reconcileCfg && specReconError && (
                     <span className="text-[11px] font-medium text-red-500">
                       {specReconError}
+                    </span>
+                  )}
+
+                  {/* Tombol PEMICU HILIR KEDUA (triggerCfg) — mis. "Bangun
+                      Observation" di panel Specimen, berdampingan dgn di atas. */}
+                  {triggerCfg &&
+                    (trigRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Memproses…
+                      </span>
+                    ) : trigArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2 py-1 ring-1 ring-sky-200">
+                        <span className="pl-1 text-[11px] font-semibold text-sky-800">
+                          {triggerCfg.confirm}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            triggerCfg.pilot ? trigRun(1) : trigRun()
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-sky-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          {triggerCfg.confirmBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTrigArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTrigResult(null);
+                          setTrigError(null);
+                          setTrigPilotDone(false);
+                          setTrigArmed(true);
+                        }}
+                        disabled={loading || busy}
+                        title={triggerCfg.title}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        {triggerCfg.btn}
+                      </button>
+                    ))}
+
+                  {triggerCfg && !trigRunning && trigResult != null && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {trigResult > 0
+                        ? `${fmt(trigResult)} ${triggerCfg.noun}`
+                        : triggerCfg.emptyMsg}
+                    </span>
+                  )}
+
+                  {triggerCfg &&
+                    triggerCfg.pilot &&
+                    trigPilotDone &&
+                    !trigArmed &&
+                    !trigRunning && (
+                      <button
+                        type="button"
+                        onClick={() => trigRun()}
+                        disabled={loading || busy}
+                        title="Proses SEMUA baris terkirim yang masih nyangkut (send=1) → bangun data hilir yang hilang di SIMGOS."
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        Jalankan semua sisanya
+                      </button>
+                    )}
+                  {triggerCfg && trigError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {trigError}
                     </span>
                   )}
 
