@@ -73,6 +73,7 @@ export default function ServiceRequestSyncPanel({
         enableQueue
         enableKeySearch
         enableServiceRequestTrigger={kind === "servicerequest-lab"}
+        enablePerformerDefault={kind === "servicerequest-lab"}
         defaultOpen
       />
     </div>

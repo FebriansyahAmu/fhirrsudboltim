@@ -22,6 +22,7 @@ import {
 } from "@/app/lib/ihs/composition-section";
 import { subjectRefOf } from "@/app/lib/ihs/registry";
 import type { DependsRef } from "@/app/lib/ihs/registry";
+import { injectDefaultLabPerformer } from "@/app/lib/ihs/servicerequest-performer";
 
 /** Referensi (string) pada payload utk sebuah dependensi; null bila kosong. */
 function readRef(payload: Record<string, unknown>, dep: DependsRef): string | null {
@@ -170,6 +171,22 @@ export async function GET(
             enriched.push(subjRefSpec.refCol);
           }
         }
+      }
+    }
+
+    // ServiceRequest LAB: performer WAJIB (RuleNumber 10377). Sebagian order lab
+    // belum punya petugas (`petugas_tindakan_medis` kosong) → performer null →
+    // ditolak. Bila operator mengaktifkan (?performerDefault=1), sisipkan performer
+    // default (dr. Sp.PK + analis) ke PAYLOAD — HANYA data tahun 2026+ (2025 ke
+    // bawah dilewati). Read-side saja: kolom DB tak bisa ditulis balik (trigger
+    // service_request_before_update selalu menghitung ulang performer dari petugas).
+    if (
+      spec.module === "servicerequest-lab" &&
+      request.nextUrl.searchParams.get("performerDefault") === "1"
+    ) {
+      const payload = result.payload as Record<string, unknown>;
+      if (injectDefaultLabPerformer(payload, result.nopen)) {
+        enriched.push("performer");
       }
     }
 

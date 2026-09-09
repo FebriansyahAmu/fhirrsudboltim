@@ -237,6 +237,7 @@ export default function ModuleSyncPanel({
   enableSpecimenTrigger = false,
   enableObservationTrigger = false,
   enableJenisMedication = false,
+  enablePerformerDefault = false,
 }: {
   module: string;
   title?: string;
@@ -303,8 +304,17 @@ export default function ModuleSyncPanel({
    * (penyerahan). Memudahkan mengelola obat penyerahan yang memicu dispense.
    */
   enableJenisMedication?: boolean;
+  /**
+   * ServiceRequest LAB: tampilkan centang "Sisipkan performer default". Bila
+   * dicentang, payload yang performer-nya KOSONG diisi performer default (dr.
+   * Sp.PK + analis) saat kirim — HANYA data tahun 2026+. Mengatasi 10377 untuk
+   * order lab yang belum punya petugas. Read-side (payload) saja.
+   */
+  enablePerformerDefault?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  // Centang performer default (ServiceRequest LAB) — lihat enablePerformerDefault.
+  const [performerDefault, setPerformerDefault] = useState(false);
   const [filter, setFilter] = useState<SyncFilter>("semua");
   const [noteFilter, setNoteFilter] = useState<string>("");
   // Sub-filter jenis: "" (semua); observation → "lab"/"ttv"; medication →
@@ -516,6 +526,9 @@ export default function ModuleSyncPanel({
         const qp = new URLSearchParams();
         if (source === "master") qp.set("source", "master");
         if (module.startsWith("composition")) qp.set("empty", "fill");
+        // ServiceRequest LAB: sisipkan performer default (2026+) bila dicentang.
+        if (enablePerformerDefault && performerDefault)
+          qp.set("performerDefault", "1");
         const qs = qp.toString() ? `?${qp}` : "";
         const res = await fetch(
           `/api/ihs/${module}/${encodeURIComponent(key)}${qs}`,
@@ -530,7 +543,7 @@ export default function ModuleSyncPanel({
         setPayloadLoading(false);
       }
     },
-    [module],
+    [module, enablePerformerDefault, performerDefault],
   );
 
   const closePayload = useCallback(() => setPayloadKey(null), []);
@@ -835,9 +848,12 @@ export default function ModuleSyncPanel({
       if (queueStopRef.current) break;
       setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
       try {
-        // 1. Rakit payload dari baris SIMGOS (read-only).
+        // 1. Rakit payload dari baris SIMGOS (read-only). ServiceRequest LAB:
+        //    sisipkan performer default (2026+) bila centang aktif.
         const pres = await fetch(
-          `/api/ihs/${module}/${encodeURIComponent(r.key)}`,
+          `/api/ihs/${module}/${encodeURIComponent(r.key)}${
+            enablePerformerDefault && performerDefault ? "?performerDefault=1" : ""
+          }`,
           { credentials: "same-origin" },
         );
         const pjson = await pres.json();
@@ -878,7 +894,7 @@ export default function ModuleSyncPanel({
     // Muat ulang status otoritatif (terkirim → Terkirim, gagal → catatan kuning).
     await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
     setQueueResults({});
-  }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo]);
+  }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo, enablePerformerDefault, performerDefault]);
 
   // ── Auto-kirim (kontinu lintas halaman, sadar rate limit) ──
   const stopAuto = useCallback(() => {
@@ -937,9 +953,12 @@ export default function ModuleSyncPanel({
         if (autoStopRef.current) return "stopped";
         let pres: Response;
         try {
-          pres = await fetch(`/api/ihs/${module}/${encodeURIComponent(key)}`, {
-            credentials: "same-origin",
-          });
+          pres = await fetch(
+            `/api/ihs/${module}/${encodeURIComponent(key)}${
+              enablePerformerDefault && performerDefault ? "?performerDefault=1" : ""
+            }`,
+            { credentials: "same-origin" },
+          );
         } catch {
           return "fail";
         }
@@ -1081,6 +1100,8 @@ export default function ModuleSyncPanel({
     dateFrom,
     dateTo,
     keyQuery,
+    enablePerformerDefault,
+    performerDefault,
   ]);
 
   // ── Re-PUT retroaktif: perbaiki Observation LAB yang SUDAH terkirim ──
@@ -1739,6 +1760,27 @@ export default function ModuleSyncPanel({
                     <span className="text-[11px] font-medium text-red-500">
                       {trigError}
                     </span>
+                  )}
+
+                  {/* ServiceRequest LAB: centang sisipkan performer default */}
+                  {enablePerformerDefault && (
+                    <label
+                      title="Untuk order lab yang belum punya petugas (performer kosong) → sisipkan performer default (dr. ISWANTO KOROMPOT, Sp.PK + HIDAYAT BUCHARI, A.Md.Ak) ke payload saat kirim. HANYA data tahun 2026+; 2025 ke bawah dilewati. Tidak menulis ke SIMGOS."
+                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        performerDefault
+                          ? "border-teal-300 bg-teal-50 text-teal-700"
+                          : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={performerDefault}
+                        onChange={(e) => setPerformerDefault(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-teal-600"
+                      />
+                      <LuShieldCheck className="h-3.5 w-3.5" />
+                      Performer default (2026+)
+                    </label>
                   )}
 
                   {/* Kirim Antrian (opsional per modul) */}
