@@ -13,9 +13,12 @@ import {
   LuPill,
   LuWrench,
   LuX,
+  LuUsersRound,
+  LuShieldCheck,
 } from "react-icons/lu";
 import { FHIR_MODULES, MODULE_GROUPS } from "@/app/lib/constants/modules";
 import type { ModuleGroup } from "@/app/lib/types/api";
+import { useCurrentUser } from "@/app/lib/hooks/useCurrentUser";
 
 // Ikon per grup modul
 const GROUP_ICON: Record<ModuleGroup, IconType> = {
@@ -125,6 +128,8 @@ function NavContent({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const { isAdmin } = useCurrentUser();
+
   return (
     <>
       <div className="space-y-0.5 px-3 pb-2 pt-4">
@@ -156,6 +161,29 @@ function NavContent({
           onClick={onNavigate}
         />
       </div>
+
+      {/* ── Master (admin) ── */}
+      {isAdmin && (
+        <div className="px-3 pb-2">
+          {collapsed ? (
+            <div className="mx-2 my-2 h-px bg-slate-100" />
+          ) : (
+            <p className="mb-1 flex items-center gap-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <LuShieldCheck className="h-3 w-3" />
+              Master
+            </p>
+          )}
+          <NavItem
+            icon={LuUsersRound}
+            name="Daftar Pengguna"
+            desc="Kelola akun & akses"
+            path="/master/pengguna"
+            isActive={pathname.startsWith("/master")}
+            collapsed={collapsed}
+            onClick={onNavigate}
+          />
+        </div>
+      )}
 
       {!collapsed && (
         <p className="px-6 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-300">
