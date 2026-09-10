@@ -25,7 +25,10 @@ import {
   maybeWriteBackSpecimenForServiceRequest,
   maybeMarkSpecimenSent,
 } from "@/app/lib/dal/specimen-writeback";
-import { maybeMarkServiceRequestSent } from "@/app/lib/dal/servicerequest-writeback";
+import {
+  maybeMarkServiceRequestSent,
+  maybeEnsureSpecimenForServiceRequest,
+} from "@/app/lib/dal/servicerequest-writeback";
 import { maybeMarkObservationSent } from "@/app/lib/dal/observation-writeback";
 import { maybeBuildEpisodeOfCareForCondition } from "@/app/lib/dal/episode-of-care-writeback";
 import {
@@ -278,6 +281,19 @@ export async function POST(
   // (berhenti sejak ~10 Agu). Trigger swa-gerbang JENIS; SR lain hanya ditandai
   // sent. Fungsi menangani error sendiri.
   await maybeMarkServiceRequestSent({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+  });
+
+  // ServiceRequest LAB tanpa petugas (performer null): trigger `service_request_
+  // before_update` memaksa send=0 di setiap update, jadi flip di atas TAK
+  // menghasilkan transisi 1→0 → trigger pembangun Specimen tak menyala & rantai
+  // lab (Specimen→Observation→DiagnosticReport) putus. Pastikan Specimen ada via
+  // INSERT langsung (menyalin persis statement trigger; no-op bila trigger sudah
+  // membuatnya / SR bukan lab). Dipanggil SESUDAH flip send agar guard NOT EXISTS
+  // menghormati specimen yang mungkin baru dibuat trigger. Menangani error sendiri.
+  await maybeEnsureSpecimenForServiceRequest({
     searchParams: request.nextUrl.searchParams,
     resource,
     status: result.status,

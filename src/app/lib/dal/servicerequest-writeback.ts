@@ -21,7 +21,11 @@
 //    `NEW.id IS NOT NULL` terpenuhi → specimen langsung merujuk SR yang benar.
 // ─────────────────────────────────────────────────────────────
 
-import { simgosExecute } from "@/app/lib/db/simgos";
+import {
+  simgosExecute,
+  simgosInsertSpecimenForServiceRequest,
+  simgosReconcileMissingLabSpecimens,
+} from "@/app/lib/db/simgos";
 
 const REFID_RE = /^[A-Za-z0-9]{1,20}$/;
 
@@ -74,6 +78,60 @@ export async function maybeMarkServiceRequestSent(params: {
       err,
     );
   }
+}
+
+/**
+ * FORWARD (pelengkap): pastikan Specimen ADA untuk order lab yang baru terkirim.
+ * Untuk order TANPA petugas (performer null), trigger `service_request_before_
+ * update` memaksa `send=0`, jadi flip send di atas TAK menghasilkan transisi →
+ * trigger pembangun Specimen tak menyala. INSERT langsung (menyalin statement
+ * trigger, self-gating + NOT EXISTS) menutup celah ini. No-op bila trigger sudah
+ * membuat specimen-nya atau SR bukan lab. Return baris tersisip (0/1).
+ */
+export async function ensureSpecimenForServiceRequest(refId: string): Promise<number> {
+  if (!REFID_RE.test(refId)) return 0;
+  return simgosInsertSpecimenForServiceRequest(refId);
+}
+
+/**
+ * Gerbang dari route POST /api/fhir setelah ServiceRequest SUKSES (2xx),
+ * DIPANGGIL SESUDAH `maybeMarkServiceRequestSent` (id sudah ada, flip send sudah
+ * dicoba). Menutup kasus order performer-null yang tak memicu trigger Specimen.
+ * Fire-and-forget: kegagalan hanya di-log.
+ */
+export async function maybeEnsureSpecimenForServiceRequest(params: {
+  searchParams: URLSearchParams;
+  resource: string;
+  status: number;
+}): Promise<void> {
+  const { searchParams, resource, status } = params;
+  if (status < 200 || status >= 300) return;
+  if (resource !== "ServiceRequest") return;
+  const refId = searchParams.get("key");
+  if (!refId || !REFID_RE.test(refId)) return;
+  try {
+    const n = await ensureSpecimenForServiceRequest(refId);
+    if (n > 0) {
+      console.log(
+        `[servicerequest specimen] refId=${refId} → INSERT specimen (${n}) (order tanpa petugas)`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[servicerequest specimen] gagal INSERT specimen utk refId=${refId}:`,
+      err,
+    );
+  }
+}
+
+/**
+ * RECONCILE (retroaktif) Specimen order performer-null: bangun `specimen` untuk
+ * SEMUA order lab terkirim (id UUID, JENIS=8) yang belum punya specimen — order
+ * yang tak pernah memicu trigger karena performer kosong. `limit` → pilot. INSERT
+ * langsung (menyalin statement trigger, idempotent). Return jumlah specimen tersisip.
+ */
+export async function reconcileMissingLabSpecimens(limit?: number): Promise<number> {
+  return simgosReconcileMissingLabSpecimens(limit);
 }
 
 /**

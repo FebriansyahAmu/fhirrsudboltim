@@ -3,13 +3,18 @@
 // Koneksi ke database SIMGOS (`kemkes-ihs` dkk).
 //
 // 🔒 KEBIJAKAN: koneksi ini PADA DASARNYA read-only. `simgosQuery`
-//    dipakai untuk baca (SELECT / WITH / SHOW). DUA pengecualian tulis
-//    yang tersanksi:
-//      1. `simgosExecute` — UPDATE saja (write-back IHS `id`).
+//    dipakai untuk baca (SELECT / WITH / SHOW). Pengecualian tulis
+//    yang tersanksi (statement DIKUNCI konstanta + param di-bind):
+//      1. `simgosExecute` — UPDATE saja (write-back IHS `id`, flip send).
 //      2. `simgosInsertEncounterRefId` — INSERT `encounter(refId)` saja,
-//         statement DIKUNCI (konstanta), untuk membuat Encounter ranap
-//         yang di-skip ETL SIMGOS; trigger membangun sisa kolomnya.
-//    Selain kedua fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
+//         untuk membuat Encounter ranap yang di-skip ETL SIMGOS.
+//      3. `simgosCallEpisodeOfCare` — CALL proc `episodeOfCare` (INSERT eof).
+//      4. `simgosInsertSpecimenForServiceRequest` /
+//         `simgosReconcileMissingLabSpecimens` — INSERT `specimen(refId,nopen)`
+//         (MENYALIN persis statement trigger `service_request_after_update`)
+//         untuk order lab TANPA petugas (performer null) yang tak pernah
+//         memicu trigger; trigger `specimen_before_insert` membangun sisanya.
+//    Selain fungsi-fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
 //    TRUNCATE/REPLACE, dll.) TETAP DITOLAK oleh `assertAllowedStatement`
 //    sebagai pertahanan berlapis, dan `multipleStatements:false`
 //    mencegah stacked queries.
@@ -171,6 +176,85 @@ export async function simgosCallEpisodeOfCare(
   const conn = await pool.getConnection();
   try {
     await conn.query("CALL `kemkes-ihs`.`episodeOfCare`(?, ?)", [refId, nopen]);
+  } finally {
+    conn.release();
+  }
+}
+
+/** Pola UUID (id Satu Sehat) — hanya order yang BENAR terkirim yang diproses. */
+const IHS_UUID_REGEX =
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+
+/**
+ * Tulis TERSANKSI ke-4: bangun baris `specimen` untuk SATU order lab yang SUDAH
+ * terkirim (`service_request.id` = UUID) namun belum punya specimen — kasus order
+ * TANPA petugas (performer null). Trigger `service_request_before_update` memaksa
+ * `send=0` pada order semacam ini di SETIAP update, sehingga penulisan id tak
+ * pernah menghasilkan transisi send 1→0 dan trigger `service_request_after_update`
+ * (pembangun specimen) TAK PERNAH menyala.
+ *
+ * Statement DIKUNCI (konstanta) & SELF-GATING: hanya menyisip bila SR-nya lab
+ * (tindakan JENIS=8), sudah ber-id UUID, dan belum ada specimen (NOT EXISTS). Ini
+ * MENYALIN persis INSERT milik trigger (`INSERT INTO specimen(refId,nopen)`);
+ * trigger `specimen_before_insert` membangun sisa kolomnya (termasuk
+ * `request=ServiceRequest/<id>` karena id sudah ada). Idempotent — `refId` di-bind.
+ * Return jumlah baris tersisip (0/1). Tidak menyentuh trigger/procedure apa pun.
+ */
+export async function simgosInsertSpecimenForServiceRequest(
+  refId: string,
+): Promise<number> {
+  if (!/^[A-Za-z0-9]{1,20}$/.test(refId)) {
+    throw new Error("refId Specimen tidak valid untuk INSERT");
+  }
+  const sql =
+    "INSERT INTO `kemkes-ihs`.`specimen` (`refId`, `nopen`) " +
+    "SELECT sr.`refId`, sr.`nopen` " +
+    "FROM `kemkes-ihs`.`service_request` sr " +
+    "JOIN `layanan`.`tindakan_medis` tm ON tm.`ID` = sr.`refId` " +
+    "JOIN `master`.`tindakan` t ON t.`ID` = tm.`TINDAKAN` " +
+    "WHERE sr.`refId` = ? AND sr.`id` REGEXP ? AND t.`JENIS` = 8 " +
+    "AND NOT EXISTS (SELECT 1 FROM `kemkes-ihs`.`specimen` sp " +
+    "WHERE sp.`refId` = sr.`refId` AND sp.`nopen` = sr.`nopen`)";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    const res = await conn.query(sql, [refId, IHS_UUID_REGEX]);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Tulis TERSANKSI ke-4 (varian RECONCILE): bangun `specimen` untuk SEMUA order
+ * lab terkirim (id UUID, JENIS=8) yang belum punya specimen — menutup tunggakan
+ * order performer-null yang tak pernah memicu trigger. `limit` (opsional) → mode
+ * UJI N baris TERBARU (ORDER BY nopen DESC) sebelum batch penuh. Statement DIKUNCI,
+ * self-gating & idempotent (NOT EXISTS). Return jumlah specimen tersisip.
+ */
+export async function simgosReconcileMissingLabSpecimens(
+  limit?: number,
+): Promise<number> {
+  const base =
+    "INSERT INTO `kemkes-ihs`.`specimen` (`refId`, `nopen`) " +
+    "SELECT sr.`refId`, sr.`nopen` " +
+    "FROM `kemkes-ihs`.`service_request` sr " +
+    "JOIN `layanan`.`tindakan_medis` tm ON tm.`ID` = sr.`refId` " +
+    "JOIN `master`.`tindakan` t ON t.`ID` = tm.`TINDAKAN` " +
+    "WHERE sr.`id` REGEXP ? AND t.`JENIS` = 8 " +
+    "AND NOT EXISTS (SELECT 1 FROM `kemkes-ihs`.`specimen` sp " +
+    "WHERE sp.`refId` = sr.`refId` AND sp.`nopen` = sr.`nopen`)";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    const res =
+      limit && limit > 0
+        ? await conn.query(base + " ORDER BY sr.`nopen` DESC LIMIT ?", [
+            IHS_UUID_REGEX,
+            limit,
+          ])
+        : await conn.query(base, [IHS_UUID_REGEX]);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
   } finally {
     conn.release();
   }

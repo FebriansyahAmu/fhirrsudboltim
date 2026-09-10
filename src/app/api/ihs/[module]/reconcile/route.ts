@@ -14,7 +14,10 @@ import {
   reconcileSpecimenRequestRefs,
   reconcileSpecimenSendFlags,
 } from "@/app/lib/dal/specimen-writeback";
-import { reconcileServiceRequestSendFlags } from "@/app/lib/dal/servicerequest-writeback";
+import {
+  reconcileServiceRequestSendFlags,
+  reconcileMissingLabSpecimens,
+} from "@/app/lib/dal/servicerequest-writeback";
 import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeback";
 import {
   reconcileMedicationRefs,
@@ -102,11 +105,16 @@ export async function POST(
     }
   }
 
-  // ServiceRequest (semua jenis): PEMICU HILIR — flip `send=0` pada SR lab
-  // (JENIS=8) & radiologi (JENIS=7) terkirim yang nyangkut `send=1` → trigger
-  // SIMGOS `service_request_after_update` membangun Specimen / ImagingStudy yang
-  // hilang (tunggakan sejak ~10 Agu). `limit` (opsional) → UJI N baris terbaru
-  // dulu sebelum batch penuh.
+  // ServiceRequest (semua jenis): "Bangun Specimen & ImagingStudy" — DUA
+  // mekanisme, keduanya membangun data hilir yang hilang:
+  //   (a) flip `send=0` pada SR lab (JENIS=8) & radiologi (JENIS=7) terkirim yang
+  //       nyangkut `send=1` → trigger `service_request_after_update` membangun
+  //       Specimen / ImagingStudy (kasus order BER-petugas; tunggakan sejak ~10 Agu).
+  //   (b) INSERT langsung `specimen` untuk order lab terkirim TANPA petugas
+  //       (performer null) yang tak pernah memicu trigger (trigger memaksa send=0
+  //       → tak ada transisi). Menyalin persis statement trigger, idempotent.
+  // `limit` (opsional) → UJI N baris terbaru dulu sebelum batch penuh (berlaku
+  // untuk kedua mekanisme). `updated` = total baris terbentuk (a + b).
   if (module.startsWith("servicerequest")) {
     let limit: number | undefined;
     try {
@@ -117,8 +125,15 @@ export async function POST(
       // tanpa body → batch penuh.
     }
     try {
-      const updated = await reconcileServiceRequestSendFlags(limit);
-      return NextResponse.json({ updated, pilot: limit != null, done: true });
+      const sendFlipped = await reconcileServiceRequestSendFlags(limit);
+      const specimensInserted = await reconcileMissingLabSpecimens(limit);
+      return NextResponse.json({
+        updated: sendFlipped + specimensInserted,
+        sendFlipped,
+        specimensInserted,
+        pilot: limit != null,
+        done: true,
+      });
     } catch (e) {
       const msg =
         e instanceof Error ? e.message : "Gagal reconcile ServiceRequest";
