@@ -7,6 +7,7 @@ import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import OrganizationForm from "@/app/components/modules/organization/OrganizationForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { OrganizationPayload } from "@/app/lib/types/fhir";
@@ -120,6 +121,16 @@ export default function OrganizationPage() {
             Development
           </span>
         </div>
+
+        {/* ── SIMGOS: status kirim Organization (list, filter tanggal, cari
+            kode, kirim antrian & auto-kirim = POST + write-back id) ── */}
+        <ModuleSyncPanel
+          module="organization"
+          title="Data Organization di SIMGOS"
+          enableQueue
+          enableKeySearch
+          defaultOpen
+        />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs

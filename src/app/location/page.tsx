@@ -14,6 +14,7 @@ import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import LocationForm from "@/app/components/modules/location/LocationForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
 import type { LocationPayload } from "@/app/lib/types/fhir";
@@ -125,6 +126,16 @@ export default function LocationPage() {
             Development
           </span>
         </div>
+
+        {/* ── SIMGOS: status kirim Location (list, filter tanggal, cari kode,
+            kirim antrian & auto-kirim = POST + write-back id) ── */}
+        <ModuleSyncPanel
+          module="location"
+          title="Data Location di SIMGOS"
+          enableQueue
+          enableKeySearch
+          defaultOpen
+        />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs

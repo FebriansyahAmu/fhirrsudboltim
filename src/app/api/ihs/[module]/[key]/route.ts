@@ -193,6 +193,23 @@ export async function GET(
       }
     }
 
+    // Location: kolom staging belum sepenuhnya FHIR. `status` tersimpan tinyint
+    // (trigger set 1=aktif / 3=nonaktif; legacy 0) → petakan ke KODE FHIR
+    // (active/suspended/inactive), kalau tidak Satu Sehat menolak (status bukan
+    // kode). `mode` kerap kosong → default "instance" (lokasi fisik nyata). id
+    // di-write-back ke `location.refId` via handleClinicalPostResult (id-only).
+    if (spec.module === "location") {
+      const payload = result.payload as Record<string, unknown>;
+      const raw = payload.status;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      payload.status = n === 3 ? "inactive" : n === 2 ? "suspended" : "active";
+      enriched.push("status");
+      if (payload.mode == null || payload.mode === "") {
+        payload.mode = "instance";
+        enriched.push("mode");
+      }
+    }
+
     // Observation LAB (jenis=6): tabel SIMGOS `parameter_hasil_to_loinc` rusak
     // (semua → placeholder 11477-7; sebagian tak termapping → code null → gagal
     // 10010). RAKIT ULANG dari peta kita (lab_loinc_map) untuk parameter yang

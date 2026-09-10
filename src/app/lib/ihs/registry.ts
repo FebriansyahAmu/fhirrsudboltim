@@ -1248,6 +1248,79 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     // Filter tanggal via kolom timestamp `getDate` (bukan encoding YYMMDD).
     dateKey: { kind: "timestamp", col: "getDate" },
   },
+
+  // ── Location (lokasi fasilitas: poli, ruangan, gedung) ──
+  // Resource fasilitas yang DIBUAT (POST) ke Satu Sehat lalu id-nya di-write-back
+  // ke `kemkes-ihs.location` (via handleClinicalPostResult, id-only by refId).
+  // refId = ID ruangan internal SIMGOS (PK). `send` = flag siap. `sendDate` =
+  // timestamp (filter tanggal). Kolom staging BELUM sepenuhnya FHIR: `status`
+  // tinyint (dipetakan ke kode di route), `mode` kosong (di-default "instance"),
+  // `flag` internal (dikecualikan). physicalType/managingOrganization/partOf sudah
+  // dibangun trigger `location_before_update`. Pencarian berdasarkan refId (kode).
+  location: {
+    module: "location",
+    resourceType: "Location",
+    table: "location",
+    keyCol: "refId",
+    keyLabel: "Kode Ruangan",
+    searchCol: "refId",
+    searchLabel: "Kode Ruangan",
+    readyFlag: "send",
+    orderCol: "sendDate",
+    columns: [
+      { col: "refId", label: "Kode", type: "code" },
+      { col: "name", label: "Nama Lokasi", type: "text" },
+      {
+        col: "physicalType",
+        label: "Tipe",
+        type: "text",
+        jsonPath: "$.coding[0].display",
+      },
+      { col: "sendDate", label: "Diperbarui", type: "date" },
+    ],
+    // `status` tinyint & `mode` kosong di-perbaiki di route; `flag`/`alias` bukan
+    // field FHIR yang valid dari staging → jangan ikut ke payload.
+    payloadExclude: ["flag", "alias"],
+    // Filter tanggal via kolom timestamp `sendDate`.
+    dateKey: { kind: "timestamp", col: "sendDate" },
+  },
+
+  // ── Organization (fasilitas / departemen: instalasi, poli, unit) ──
+  // Resource fasilitas yang DIBUAT (POST) ke Satu Sehat lalu id-nya di-write-back
+  // ke `kemkes-ihs.organization` (via handleClinicalPostResult, id-only by refId).
+  // refId = ID unit internal SIMGOS (PK). `send` = flag siap. `sendDate` =
+  // timestamp (filter tanggal). `active` tinyint → boolean FHIR (boolCols).
+  // type/partOf sudah dibangun trigger. `flag`/`alias` bukan field FHIR valid →
+  // dikecualikan. Pencarian berdasarkan refId (kode unit).
+  organization: {
+    module: "organization",
+    resourceType: "Organization",
+    table: "organization",
+    keyCol: "refId",
+    keyLabel: "Kode Unit",
+    searchCol: "refId",
+    searchLabel: "Kode Unit",
+    readyFlag: "send",
+    orderCol: "sendDate",
+    // active tinyint (0/1) → boolean FHIR (Organization.active).
+    boolCols: ["active"],
+    columns: [
+      { col: "refId", label: "Kode", type: "code" },
+      { col: "name", label: "Nama Unit", type: "text" },
+      {
+        col: "type",
+        label: "Tipe",
+        type: "text",
+        jsonPath: "$[0].coding[0].display",
+      },
+      { col: "sendDate", label: "Diperbarui", type: "date" },
+    ],
+    // `flag`/`alias` (char kosong; FHIR alias = array) bukan field valid dari
+    // staging → jangan ikut ke payload.
+    payloadExclude: ["flag", "alias"],
+    // Filter tanggal via kolom timestamp `sendDate`.
+    dateKey: { kind: "timestamp", col: "sendDate" },
+  },
 };
 
 export function getModuleSpec(module: string): IhsModuleSpec | null {
