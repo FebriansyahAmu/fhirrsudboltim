@@ -104,17 +104,24 @@ export interface IhsModuleSpec {
     nikCol: string; // kolom NIK di staging, mis. "nik"
   };
   /**
-   * Filter tanggal via ENCODING `YYMMDD` pada sebuah kolom ter-index — jauh
-   * lebih ringan (range indeks) daripada memindai kolom timestamp tak ter-index.
-   * `yymmdd-prefix`: kolom diawali `YYMMDD` (mis. refId encounter `2608310007`,
-   * atau `nopen` No. Pendaftaran `2608270011`).
+   * Filter tanggal. Dua bentuk:
+   *  - `yymmdd-prefix`: kolom ter-index diawali `YYMMDD` (mis. refId encounter
+   *    `2608310007`, atau `nopen` No. Pendaftaran `2608270011`) — range indeks,
+   *    sangat ringan.
+   *  - `timestamp`: kolom DATETIME/TIMESTAMP biasa (mis. `getDate` pada
+   *    Practitioner) — difilter `BETWEEN from 00:00:00 AND to 23:59:59`.
    */
-  dateKey?: {
-    kind: "yymmdd-prefix";
-    keyLength: number; // total panjang nilai kolom (mis. 10) untuk padding range
-    /** Kolom yang di-filter. Default: keyCol. Mis. "nopen" bila keyCol bukan tanggal. */
-    col?: string;
-  };
+  dateKey?:
+    | {
+        kind: "yymmdd-prefix";
+        keyLength: number; // total panjang nilai kolom (mis. 10) untuk padding range
+        /** Kolom yang di-filter. Default: keyCol. Mis. "nopen" bila keyCol bukan tanggal. */
+        col?: string;
+      }
+    | {
+        kind: "timestamp";
+        col: string; // kolom DATETIME/TIMESTAMP yang di-filter (mis. "getDate")
+      };
   /**
    * Ketergantungan referensi: resource ini butuh resource lain terkirim dulu.
    * Bila baris belum terkirim DAN referensinya belum terbentuk (mis.
@@ -1207,6 +1214,39 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
     // Bergantung Patient (bukan Encounter): "Menunggu Patient" bila ref kosong.
     dependsOn: { refCol: "patient", refPath: "$.reference", label: "Patient" },
+  },
+
+  // ── Practitioner (tenaga kesehatan / nakes) ──
+  // Resource MASTER nasional: TIDAK dibuat (POST) dari sini — di-RESOLUSI dari
+  // Satu Sehat berdasarkan NIK (GET /Practitioner?identifier=nik|<refId>), lalu
+  // id + name + meta + dst. di-write-back ke `kemkes-ihs.practitioner` (kolom
+  // yang masih kosong). refId = NIK (PK). `get` = flag (siap fetch). `getDate`
+  // = kapan terakhir diproses → dipakai filter tanggal (timestamp). Tidak
+  // bergantung resource lain. Pencarian berdasarkan refId (NIK).
+  practitioner: {
+    module: "practitioner",
+    resourceType: "Practitioner",
+    table: "practitioner",
+    keyCol: "refId",
+    keyLabel: "NIK",
+    searchCol: "refId",
+    searchLabel: "NIK",
+    readyFlag: "get",
+    orderCol: "getDate",
+    columns: [
+      { col: "refId", label: "NIK", type: "code" },
+      { col: "name", label: "Nama", type: "json-name" },
+      {
+        col: "identifier",
+        label: "No. Nakes",
+        type: "code",
+        jsonPath: "$[0].value",
+      },
+      { col: "gender", label: "Gender", type: "code" },
+      { col: "getDate", label: "Diperbarui", type: "date" },
+    ],
+    // Filter tanggal via kolom timestamp `getDate` (bukan encoding YYMMDD).
+    dateKey: { kind: "timestamp", col: "getDate" },
   },
 };
 

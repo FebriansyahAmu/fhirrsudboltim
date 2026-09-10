@@ -184,13 +184,29 @@ function keyDateConds(
   alias = "",
 ): { conds: string[]; params: string[] } {
   const out = { conds: [] as string[], params: [] as string[] };
-  if (!spec.dateKey || spec.dateKey.kind !== "yymmdd-prefix" || !range) {
+  if (!spec.dateKey || !range) return out;
+  const dk = spec.dateKey;
+
+  // Kolom yang di-filter: yymmdd → default keyCol atau override; timestamp → col.
+  const rawCol = dk.kind === "yymmdd-prefix" ? (dk.col ?? spec.keyCol) : dk.col;
+  const keyCol = ident(rawCol);
+  const qCol = alias ? `\`${ident(alias)}\`.\`${keyCol}\`` : `\`${keyCol}\``;
+
+  if (dk.kind === "timestamp") {
+    // Kolom DATETIME/TIMESTAMP biasa (mis. getDate) → BETWEEN batas hari.
+    if (range.from) {
+      out.conds.push(`${qCol} >= ?`);
+      out.params.push(`${range.from} 00:00:00`);
+    }
+    if (range.to) {
+      out.conds.push(`${qCol} <= ?`);
+      out.params.push(`${range.to} 23:59:59`);
+    }
     return out;
   }
-  // Kolom yang di-filter: default keyCol, atau override (mis. "nopen").
-  const keyCol = ident(spec.dateKey.col ?? spec.keyCol);
-  const qCol = alias ? `\`${ident(alias)}\`.\`${keyCol}\`` : `\`${keyCol}\``;
-  const pad = Math.max(0, spec.dateKey.keyLength - 6);
+
+  // yymmdd-prefix: bandingkan prefix YYMMDD ter-index (padding sesuai panjang).
+  const pad = Math.max(0, dk.keyLength - 6);
   if (range.from) {
     const p = toYymmdd(range.from);
     if (p) {

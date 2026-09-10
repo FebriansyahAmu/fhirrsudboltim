@@ -12,6 +12,7 @@ import {
   writeBackPatientRecord,
   nikFromIdentifierParam,
 } from "@/app/lib/dal/patient-writeback";
+import { maybePractitionerGetWriteBack } from "@/app/lib/dal/practitioner-writeback";
 import {
   handleEncounterPostResult,
   handleEncounterGetResult,
@@ -104,6 +105,17 @@ export async function GET(
       console.error("[patient GET writeback] gagal update SIMGOS patient:", err);
     }
   }
+
+  // Practitioner GET by NIK (2xx) → write-back id + name + meta + dst. ke SIMGOS
+  // `practitioner` (kolom yang masih kosong), ditautkan via NIK (refId). Untuk
+  // RESOLUSI id nakes dari Satu Sehat (Practitioner tak dibuat, hanya dicari).
+  // Kegagalan tak membatalkan response ke client.
+  await maybePractitionerGetWriteBack({
+    searchParams: request.nextUrl.searchParams,
+    resource,
+    status: result.status,
+    responseData: result.data,
+  });
 
   // Resource KLINIS (GET search): bila client menyertakan ?module=&key= dan
   // hasilnya 2xx, write-back id + subject + encounter ke baris staging (IF null).

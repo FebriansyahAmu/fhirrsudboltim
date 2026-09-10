@@ -223,6 +223,15 @@ type ReconcileCfg = {
   body?: Record<string, unknown>;
 };
 
+/** Bundle FHIR searchset memuat ≥1 resource? (dipakai mode resolusi). */
+function bundleHasEntry(j: unknown): boolean {
+  if (!j || typeof j !== "object") return false;
+  const o = j as { entry?: unknown; total?: unknown };
+  if (Array.isArray(o.entry) && o.entry.length > 0) return true;
+  if (typeof o.total === "number" && o.total > 0) return true;
+  return false;
+}
+
 export default function ModuleSyncPanel({
   module,
   title,
@@ -238,6 +247,7 @@ export default function ModuleSyncPanel({
   enableObservationTrigger = false,
   enableJenisMedication = false,
   enablePerformerDefault = false,
+  resolveMode = null,
 }: {
   module: string;
   title?: string;
@@ -311,6 +321,14 @@ export default function ModuleSyncPanel({
    * order lab yang belum punya petugas. Read-side (payload) saja.
    */
   enablePerformerDefault?: boolean;
+  /**
+   * Mode RESOLUSI (mis. Practitioner): "kirim" bukan POST melainkan
+   * GET `/api/fhir/<resourceType>?identifier=<identifierSystem>|<key>` — Satu
+   * Sehat mencari resource-nya berdasarkan identifier (key = refId/NIK), lalu
+   * server write-back id + data ke baris SIMGOS. Sukses = bundle memuat ≥1 entry.
+   * Antrian & Auto-kirim memakai jalur ini alih-alih rakit-payload + POST.
+   */
+  resolveMode?: { resourceType: string; identifierSystem: string } | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   // Centang performer default (ServiceRequest LAB) — lihat enablePerformerDefault.
@@ -848,6 +866,24 @@ export default function ModuleSyncPanel({
       if (queueStopRef.current) break;
       setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
       try {
+        // Mode RESOLUSI (mis. Practitioner): GET by identifier (NIK) →
+        // server write-back id. Sukses = bundle memuat ≥1 entry.
+        if (resolveMode) {
+          const rres = await fetch(
+            `/api/fhir/${encodeURIComponent(resolveMode.resourceType)}?identifier=${encodeURIComponent(`${resolveMode.identifierSystem}|${r.key}`)}`,
+            { credentials: "same-origin" },
+          );
+          const rjson = await rres.json().catch(() => null);
+          if (rres.ok && bundleHasEntry(rjson)) {
+            ok++;
+            setQueueResults((s) => ({ ...s, [r.key]: "ok" }));
+          } else {
+            fail++;
+            setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+          }
+          await new Promise((res) => setTimeout(res, 250));
+          continue;
+        }
         // 1. Rakit payload dari baris SIMGOS (read-only). ServiceRequest LAB:
         //    sisipkan performer default (2026+) bila centang aktif.
         const pres = await fetch(
@@ -894,7 +930,7 @@ export default function ModuleSyncPanel({
     // Muat ulang status otoritatif (terkirim → Terkirim, gagal → catatan kuning).
     await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
     setQueueResults({});
-  }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo, enablePerformerDefault, performerDefault]);
+  }, [data, queueRunning, module, load, filter, page, noteFilter, dateFrom, dateTo, enablePerformerDefault, performerDefault, resolveMode]);
 
   // ── Auto-kirim (kontinu lintas halaman, sadar rate limit) ──
   const stopAuto = useCallback(() => {
@@ -951,6 +987,25 @@ export default function ModuleSyncPanel({
     ): Promise<"ok" | "fail" | "stopped"> => {
       for (;;) {
         if (autoStopRef.current) return "stopped";
+        // Mode RESOLUSI (mis. Practitioner): GET by identifier → write-back id.
+        if (resolveMode) {
+          let rres: Response;
+          try {
+            rres = await fetch(
+              `/api/fhir/${encodeURIComponent(resolveMode.resourceType)}?identifier=${encodeURIComponent(`${resolveMode.identifierSystem}|${key}`)}`,
+              { credentials: "same-origin" },
+            );
+          } catch {
+            return "fail";
+          }
+          if (rres.status === 429) {
+            if (!(await backoff(rres))) return "stopped";
+            continue;
+          }
+          const rjson = await rres.json().catch(() => null);
+          if (!rres.ok) return "fail";
+          return bundleHasEntry(rjson) ? "ok" : "fail";
+        }
         let pres: Response;
         try {
           pres = await fetch(
@@ -1102,6 +1157,7 @@ export default function ModuleSyncPanel({
     keyQuery,
     enablePerformerDefault,
     performerDefault,
+    resolveMode,
   ]);
 
   // ── Re-PUT retroaktif: perbaiki Observation LAB yang SUDAH terkirim ──

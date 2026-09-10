@@ -7,8 +7,17 @@ import ApiMethodTabs from "@/app/components/modules/ApiMethodTabs";
 import PractitionerForm from "@/app/components/modules/practitioner/PractitionerForm";
 import ResponseViewer from "@/app/components/ui/ResponseViewer";
 import DeliveryLogTable from "@/app/components/ui/DeliveryLogTable";
+import ModuleSyncPanel from "@/app/components/ihs/ModuleSyncPanel";
 import { useApiRequest } from "@/app/lib/hooks/useApiRequest";
 import type { HttpMethod } from "@/app/lib/types/api";
+
+// Mode RESOLUSI: "kirim" Practitioner = GET by NIK (identifier) → server
+// write-back id ke SIMGOS. Practitioner tak dibuat (POST), hanya dicari.
+// Referensi stabil (di luar komponen) agar tak memicu re-render antrian.
+const PRACTITIONER_RESOLVE = {
+  resourceType: "Practitioner",
+  identifierSystem: "https://fhir.kemkes.go.id/id/nik",
+} as const;
 
 // ─────────────────────────────────────────────
 // Konstanta per method
@@ -96,6 +105,17 @@ export default function PractitionerPage() {
             Development
           </span>
         </div>
+
+        {/* ── SIMGOS: status resolusi Practitioner (list, filter tanggal,
+            cari NIK, kirim antrian & auto-kirim = resolusi id via GET) ── */}
+        <ModuleSyncPanel
+          module="practitioner"
+          title="Data Practitioner di SIMGOS"
+          enableQueue
+          enableKeySearch
+          resolveMode={PRACTITIONER_RESOLVE}
+          defaultOpen
+        />
 
         {/* ── 2. Method Tabs ── */}
         <ApiMethodTabs
