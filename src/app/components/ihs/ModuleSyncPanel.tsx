@@ -1765,7 +1765,7 @@ export default function ModuleSyncPanel({
                   {/* ServiceRequest LAB: centang sisipkan performer default */}
                   {enablePerformerDefault && (
                     <label
-                      title="Untuk order lab yang belum punya petugas (performer kosong) → sisipkan performer default (dr. ISWANTO KOROMPOT, Sp.PK + HIDAYAT BUCHARI, A.Md.Ak) ke payload saat kirim. HANYA data tahun 2026+; 2025 ke bawah dilewati. Tidak menulis ke SIMGOS."
+                      title="Untuk order lab yang belum punya petugas (performer kosong) → sisipkan performer ke payload saat kirim: dr. ISWANTO KOROMPOT, Sp.PK (tetap) + ANALIS yang benar-benar mengerjakan tindakan ini (diambil otomatis dari petugas tindakan → practitioner IHS). HANYA data tahun 2026+; 2025 ke bawah dilewati. Tidak menulis ke SIMGOS."
                       className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                         performerDefault
                           ? "border-teal-300 bg-teal-50 text-teal-700"
