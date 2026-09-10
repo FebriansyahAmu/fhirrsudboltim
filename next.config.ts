@@ -42,6 +42,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Build ramping untuk Docker: hasilkan server minimal di .next/standalone
+  // (server.js + node_modules ter-trace) sehingga image runner kecil.
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     return [

@@ -1,0 +1,31 @@
+# Dependencies & artefak build (di-install/di-build ulang di dalam image)
+node_modules
+.next
+out
+build
+
+# Version control & editor/tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+
+# Environment & secrets — JANGAN masuk image.
+# NEXT_PUBLIC_* dilempar terpisah lewat build args (docker-compose).
+.env
+.env.*
+
+# Berkas Docker itu sendiri
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Dokumentasi & sampah
+README.md
+*.md
+*.log
+npm-debug.log*
+_probe_tmp*.mjs
+coverage

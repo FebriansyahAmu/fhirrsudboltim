@@ -1,0 +1,8 @@
+# Dependensi Python untuk tools DICOM (dipakai di runtime oleh /api/tools/*).
+# DIPIN agar build reprodusibel DAN kompatibel dengan kode di scripts/*.py.
+#
+# PENTING: scripts memakai ds.save_as(path, write_like_original=False).
+# Parameter `write_like_original` DIHAPUS di pydicom 3.0 → wajib tetap di 2.4.x.
+pydicom==2.4.4
+numpy==1.26.4
+Pillow==10.4.0

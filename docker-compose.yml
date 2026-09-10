@@ -1,0 +1,59 @@
+# ==========================================================================
+# FHIR RSUD Boltim — aplikasi KEDUA di VPS.
+# App pertama (antrian) sudah jalan di 127.0.0.1:3001 → app ini pakai 3002.
+#
+#   docker compose up -d --build      # build + jalankan
+#   docker compose logs -f            # lihat log
+#   docker compose down               # hentikan
+#
+# Semua variabel runtime dibaca dari file .env di folder ini.
+# ==========================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* di-inline ke bundle browser saat BUILD (bukan runtime),
+        # jadi harus dilempar sebagai build args. Compose mengisinya dari .env.
+        NEXT_PUBLIC_SATU_SEHAT_BASE_URL: ${NEXT_PUBLIC_SATU_SEHAT_BASE_URL:-}
+        NEXT_PUBLIC_SATU_SEHAT_ORG_ID: ${NEXT_PUBLIC_SATU_SEHAT_ORG_ID:-}
+    image: fhirrsudboltim-app:2.0.0
+    container_name: fhirrsudboltim-app
+    restart: unless-stopped
+
+    # Rotasi log agar tidak menghabiskan disk VPS (default json-file tak terbatas).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # Batas resource — melindungi app antrian yang berbagi VPS. Sesuaikan
+    # dengan kapasitas VPS (uncomment & atur bila perlu).
+    # mem_limit: 768m
+    # cpus: 1.0
+
+    # Variabel runtime: DB (aplikasi + SIMGOS), SECRET, kredensial Satu Sehat, dll.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+
+    ports:
+      # host:container — bind ke localhost; di depan pakai reverse proxy (nginx).
+      - "127.0.0.1:3002:3000"
+
+    # Catatan koneksi DB:
+    # Database berada di SERVER TERPISAH (IP sendiri). Container punya akses
+    # keluar default, jadi cukup isi IP-nya di .env — TIDAK perlu extra_hosts /
+    # host.docker.internal.
+    #   DATABASE_HOST="10.x.x.x"                  (app DB, dipakai adapter Prisma)
+    #   DATABASE_URL="mysql://user:pass@10.x.x.x:3306/fhir_satusehat"
+    #   DATABASE_URL_SIMGOS="mysql://user:pass@10.y.y.y:3306/kemkes-ihs"
+    # Penting di sisi server DB: Docker mem-MASQUERADE trafik container di
+    # belakang IP host VPS → GRANT user MySQL harus mengizinkan IP VPS
+    # (user@'<ip-vps>' atau '%'), bukan IP internal container (172.x).
