@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   LuArrowLeft,
@@ -15,8 +15,12 @@ import {
   LuChevronDown,
   LuEyeOff,
   LuListFilter,
+  LuSearch,
+  LuX,
   LuChevronsDownUp,
   LuChevronsUpDown,
+  LuFileSearch,
+  LuStethoscope,
 } from "react-icons/lu";
 
 // ── Tipe respons (selaras dengan lib/ihs/encounter-detail.ts) ──
@@ -65,21 +69,21 @@ interface EncounterDetail {
 // Aksen per resource → kelas Tailwind (string literal utuh agar ter-scan JIT).
 const ACCENT: Record<
   string,
-  { icon: string; bar: string; text: string; soft: string }
+  { icon: string; bar: string; text: string; soft: string; spine: string }
 > = {
-  rose: { icon: "bg-rose-50 text-rose-600", bar: "bg-rose-500", text: "text-rose-700", soft: "bg-rose-50" },
-  pink: { icon: "bg-pink-50 text-pink-600", bar: "bg-pink-500", text: "text-pink-700", soft: "bg-pink-50" },
-  orange: { icon: "bg-orange-50 text-orange-600", bar: "bg-orange-500", text: "text-orange-700", soft: "bg-orange-50" },
-  amber: { icon: "bg-amber-50 text-amber-600", bar: "bg-amber-500", text: "text-amber-700", soft: "bg-amber-50" },
-  lime: { icon: "bg-lime-50 text-lime-600", bar: "bg-lime-500", text: "text-lime-700", soft: "bg-lime-50" },
-  emerald: { icon: "bg-emerald-50 text-emerald-600", bar: "bg-emerald-500", text: "text-emerald-700", soft: "bg-emerald-50" },
-  teal: { icon: "bg-teal-50 text-teal-600", bar: "bg-teal-500", text: "text-teal-700", soft: "bg-teal-50" },
-  cyan: { icon: "bg-cyan-50 text-cyan-600", bar: "bg-cyan-500", text: "text-cyan-700", soft: "bg-cyan-50" },
-  sky: { icon: "bg-sky-50 text-sky-600", bar: "bg-sky-500", text: "text-sky-700", soft: "bg-sky-50" },
-  blue: { icon: "bg-blue-50 text-blue-600", bar: "bg-blue-500", text: "text-blue-700", soft: "bg-blue-50" },
-  indigo: { icon: "bg-indigo-50 text-indigo-600", bar: "bg-indigo-500", text: "text-indigo-700", soft: "bg-indigo-50" },
-  violet: { icon: "bg-violet-50 text-violet-600", bar: "bg-violet-500", text: "text-violet-700", soft: "bg-violet-50" },
-  fuchsia: { icon: "bg-fuchsia-50 text-fuchsia-600", bar: "bg-fuchsia-500", text: "text-fuchsia-700", soft: "bg-fuchsia-50" },
+  rose: { icon: "bg-rose-50 text-rose-600", bar: "bg-rose-500", text: "text-rose-700", soft: "bg-rose-50", spine: "bg-rose-400" },
+  pink: { icon: "bg-pink-50 text-pink-600", bar: "bg-pink-500", text: "text-pink-700", soft: "bg-pink-50", spine: "bg-pink-400" },
+  orange: { icon: "bg-orange-50 text-orange-600", bar: "bg-orange-500", text: "text-orange-700", soft: "bg-orange-50", spine: "bg-orange-400" },
+  amber: { icon: "bg-amber-50 text-amber-600", bar: "bg-amber-500", text: "text-amber-700", soft: "bg-amber-50", spine: "bg-amber-400" },
+  lime: { icon: "bg-lime-50 text-lime-600", bar: "bg-lime-500", text: "text-lime-700", soft: "bg-lime-50", spine: "bg-lime-400" },
+  emerald: { icon: "bg-emerald-50 text-emerald-600", bar: "bg-emerald-500", text: "text-emerald-700", soft: "bg-emerald-50", spine: "bg-emerald-400" },
+  teal: { icon: "bg-teal-50 text-teal-600", bar: "bg-teal-500", text: "text-teal-700", soft: "bg-teal-50", spine: "bg-teal-400" },
+  cyan: { icon: "bg-cyan-50 text-cyan-600", bar: "bg-cyan-500", text: "text-cyan-700", soft: "bg-cyan-50", spine: "bg-cyan-400" },
+  sky: { icon: "bg-sky-50 text-sky-600", bar: "bg-sky-500", text: "text-sky-700", soft: "bg-sky-50", spine: "bg-sky-400" },
+  blue: { icon: "bg-blue-50 text-blue-600", bar: "bg-blue-500", text: "text-blue-700", soft: "bg-blue-50", spine: "bg-blue-400" },
+  indigo: { icon: "bg-indigo-50 text-indigo-600", bar: "bg-indigo-500", text: "text-indigo-700", soft: "bg-indigo-50", spine: "bg-indigo-400" },
+  violet: { icon: "bg-violet-50 text-violet-600", bar: "bg-violet-500", text: "text-violet-700", soft: "bg-violet-50", spine: "bg-violet-400" },
+  fuchsia: { icon: "bg-fuchsia-50 text-fuchsia-600", bar: "bg-fuchsia-500", text: "text-fuchsia-700", soft: "bg-fuchsia-50", spine: "bg-fuchsia-400" },
 };
 const accentOf = (a: string) => ACCENT[a] ?? ACCENT.teal;
 
@@ -105,12 +109,12 @@ const toneFor = (v: string): keyof typeof TONE | null =>
 
 // Warna kelas kunjungan (Encounter.class code).
 const CLASS_TONE: Record<string, string> = {
-  EMER: "bg-rose-100 text-rose-700", // gawat darurat
-  IMP: "bg-indigo-100 text-indigo-700", // rawat inap
+  EMER: "bg-rose-100 text-rose-700",
+  IMP: "bg-indigo-100 text-indigo-700",
   ACUTE: "bg-indigo-100 text-indigo-700",
-  AMB: "bg-sky-100 text-sky-700", // rawat jalan
-  HH: "bg-teal-100 text-teal-700", // home health
-  VR: "bg-cyan-100 text-cyan-700", // virtual
+  AMB: "bg-sky-100 text-sky-700",
+  HH: "bg-teal-100 text-teal-700",
+  VR: "bg-cyan-100 text-cyan-700",
   SS: "bg-violet-100 text-violet-700",
   OBSENC: "bg-amber-100 text-amber-700",
 };
@@ -130,36 +134,94 @@ const STATUS_LABEL: Record<string, string> = {
 function fmt(n: number) {
   return n.toLocaleString("id-ID");
 }
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 // Kelompokkan groups per `family`, mempertahankan urutan kemunculan.
-function byFamily(groups: DetailGroup[]): { family: string; groups: DetailGroup[] }[] {
+function byFamily<T extends { g: DetailGroup }>(
+  rows: T[],
+): { family: string; rows: T[] }[] {
   const order: string[] = [];
-  const map: Record<string, DetailGroup[]> = {};
-  for (const g of groups) {
-    if (!map[g.family]) {
-      map[g.family] = [];
-      order.push(g.family);
+  const map: Record<string, T[]> = {};
+  for (const r of rows) {
+    if (!map[r.g.family]) {
+      map[r.g.family] = [];
+      order.push(r.g.family);
     }
-    map[g.family].push(g);
+    map[r.g.family].push(r);
   }
-  return order.map((family) => ({ family, groups: map[family] }));
+  return order.map((family) => ({ family, rows: map[family] }));
+}
+
+function itemMatches(it: DetailItem, q: string): boolean {
+  if (!q) return true;
+  const hay = [it.primary ?? "", ...it.meta.map((m) => `${m.label} ${m.value}`)]
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
 }
 
 // ── Sub-komponen kecil ──────────────────────────────────────
+/** Cincin progres (donut SVG) — dipakai untuk ringkasan keseluruhan. */
+function Ring({
+  pct,
+  size = 56,
+  stroke = 5,
+}: {
+  pct: number;
+  size?: number;
+  stroke?: number;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const off = c - (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="shrink-0 -rotate-90"
+      role="img"
+      aria-label={`Progres ${pct}%`}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        strokeWidth={stroke}
+        className="stroke-slate-100"
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        strokeWidth={stroke}
+        strokeDasharray={c}
+        strokeDashoffset={off}
+        strokeLinecap="round"
+        className="stroke-emerald-500 transition-[stroke-dashoffset] duration-700 ease-out motion-reduce:transition-none"
+      />
+    </svg>
+  );
+}
+
 function MetaChip({ m }: { m: DetailMeta }) {
   const tone = m.type === "code" ? toneFor(m.value) : null;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] ring-1 ring-slate-100">
-      <span className="text-slate-400">{m.label}</span>
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 text-[11px] ring-1 ring-slate-100">
+      <span className="shrink-0 text-slate-400">{m.label}</span>
       {tone ? (
         <span
-          className={`rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ring-1 ${TONE[tone]}`}
+          className={`rounded px-1 py-px text-[10px] font-semibold uppercase tracking-wide ring-1 ${TONE[tone]}`}
         >
           {m.value}
         </span>
       ) : (
         <span
-          className={m.type === "code" ? "font-mono text-slate-600" : "text-slate-700"}
+          className={`truncate ${m.type === "code" ? "font-mono text-slate-600" : "text-slate-700"}`}
+          title={m.value}
         >
           {m.value}
         </span>
@@ -190,7 +252,7 @@ function Toggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none ${
+      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none ${
         active ? on : "bg-slate-100 text-slate-600 hover:bg-slate-200"
       }`}
     >
@@ -200,16 +262,21 @@ function Toggle({
   );
 }
 
+const ITEM_CAP = 5; // item ditampilkan per kartu sebelum "lihat lainnya"
+
 export default function EncounterDetailView({ refId }: { refId: string }) {
   const [data, setData] = useState<EncounterDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Kontrol interaktif
-  const [hideEmpty, setHideEmpty] = useState(false);
+  const [hideEmpty, setHideEmpty] = useState(true);
   const [onlyUnsent, setOnlyUnsent] = useState(false);
+  const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [activeFamily, setActiveFamily] = useState<string | null>(null);
+  const railNavRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -250,21 +317,58 @@ export default function EncounterDetailView({ refId }: { refId: string }) {
   const totalItems = groups.reduce((s, g) => s + g.total, 0);
   const totalSent = groups.reduce((s, g) => s + g.sent, 0);
   const belumTotal = totalItems - totalSent;
-  const withData = groups.filter((g) => g.total > 0).length;
+  const pctSent = totalItems > 0 ? Math.round((totalSent / totalItems) * 100) : 0;
 
-  // Terapkan filter tampilan.
-  const visibleGroups = useMemo(() => {
-    let v = groups;
-    if (hideEmpty) v = v.filter((g) => g.total > 0);
-    if (onlyUnsent) v = v.filter((g) => g.total - g.sent > 0);
-    return v;
-  }, [groups, hideEmpty, onlyUnsent]);
-  const families = useMemo(() => byFamily(visibleGroups), [visibleGroups]);
+  // Terapkan filter + pencarian → daftar group yang tampil (dengan item terfilter).
+  const prepared = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return groups
+      .map((g) => {
+        let items = g.items;
+        if (onlyUnsent) items = items.filter((i) => !i.sent);
+        if (q) items = items.filter((i) => itemMatches(i, q));
+        let show = true;
+        if (hideEmpty && g.total === 0) show = false;
+        if (onlyUnsent && g.total - g.sent === 0) show = false;
+        if (q && items.length === 0) show = false;
+        return { g, items, show };
+      })
+      .filter((x) => x.show);
+  }, [groups, onlyUnsent, hideEmpty, query]);
 
-  // Scroll-spy: sorot resource yang sedang terlihat di viewport.
+  const families = useMemo(() => {
+    // Dalam tiap famili: kartu berisi dulu, kartu kosong di belakang (urutan
+    // spesifikasi dipertahankan untuk yang setara — sort JS stabil). Tinggi
+    // kartu beragam diseimbangkan oleh layout kolom (masonry) di bawah.
+    return byFamily(prepared).map((fam) => ({
+      family: fam.family,
+      rows: [...fam.rows].sort(
+        (a, b) => (a.g.total === 0 ? 1 : 0) - (b.g.total === 0 ? 1 : 0),
+      ),
+    }));
+  }, [prepared]);
+
+  // Statistik per famili (untuk rail navigasi).
+  const familyStats = useMemo(
+    () =>
+      families.map((fam) => {
+        const total = fam.rows.reduce((s, r) => s + r.g.total, 0);
+        const sent = fam.rows.reduce((s, r) => s + r.g.sent, 0);
+        return {
+          family: fam.family,
+          slug: slugify(fam.family),
+          total,
+          belum: total - sent,
+          groups: fam.rows.length,
+        };
+      }),
+    [families],
+  );
+
+  // Scroll-spy: sorot famili yang sedang terlihat.
   useEffect(() => {
     const els = Array.from(
-      document.querySelectorAll<HTMLElement>("section[data-res]"),
+      document.querySelectorAll<HTMLElement>("section[data-fam]"),
     );
     if (els.length === 0) return;
     const obs = new IntersectionObserver(
@@ -272,19 +376,28 @@ export default function EncounterDetailView({ refId }: { refId: string }) {
         const vis = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (vis[0]) setActiveKey(vis[0].target.getAttribute("data-res"));
+        if (vis[0]) setActiveFamily(vis[0].target.getAttribute("data-fam"));
       },
-      { rootMargin: "-96px 0px -55% 0px", threshold: 0 },
+      { rootMargin: "-120px 0px -60% 0px", threshold: 0 },
     );
     els.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, [families]);
 
-  const scrollToGroup = (key: string) => {
+  // Jaga tombol famili aktif tetap terlihat di dalam rail yang bisa scroll.
+  useEffect(() => {
+    if (!activeFamily) return;
+    const btn = railNavRef.current?.querySelector<HTMLElement>(
+      `[data-fnav="${activeFamily}"]`,
+    );
+    btn?.scrollIntoView({ block: "nearest" });
+  }, [activeFamily]);
+
+  const scrollToFamily = (slug: string) =>
     document
-      .getElementById(`res-${key}`)
+      .getElementById(`fam-${slug}`)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+
   const toggleCollapse = (key: string) =>
     setCollapsed((s) => {
       const n = new Set(s);
@@ -292,13 +405,27 @@ export default function EncounterDetailView({ refId }: { refId: string }) {
       else n.add(key);
       return n;
     });
+  const toggleItems = (key: string) =>
+    setExpandedItems((s) => {
+      const n = new Set(s);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
   const expandAll = () => setCollapsed(new Set());
-  const collapseAll = () => setCollapsed(new Set(visibleGroups.map((g) => g.key)));
+  const collapseAll = () =>
+    setCollapsed(new Set(prepared.map((x) => x.g.key)));
 
   const encWaiting = !!enc && !enc.sent && !enc.patientRef;
+  const anyFilter = onlyUnsent || hideEmpty || query.trim() !== "";
+  const resetFilters = () => {
+    setOnlyUnsent(false);
+    setHideEmpty(false);
+    setQuery("");
+  };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Toolbar atas */}
       <div className="flex items-center justify-between gap-3">
         <Link
@@ -344,412 +471,516 @@ export default function EncounterDetailView({ refId }: { refId: string }) {
 
       {/* Skeleton */}
       {loading && !data && !error && (
-        <div className="space-y-5">
-          <div className="h-36 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="h-52 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" />
+            <div className="h-64 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-24 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none"
+                className="h-40 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none"
               />
             ))}
           </div>
-          <div className="h-64 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" />
         </div>
       )}
 
-      {enc && (
-        <>
-          {/* ── Hero: ringkasan encounter ── */}
-          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-            <div className="flex flex-col gap-4 bg-linear-to-br from-blue-50 via-white to-cyan-50 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-blue-200 bg-white text-3xl shadow-sm">
-                  🏥
+      {/* Encounter tidak ditemukan */}
+      {data && enc && !enc.found && (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-100 bg-white px-6 py-14 text-center shadow-sm">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-slate-400">
+            <LuFileSearch className="h-7 w-7" />
+          </div>
+          <p className="text-sm font-bold text-slate-700">
+            Encounter tidak ditemukan
+          </p>
+          <p className="max-w-sm text-xs text-slate-400">
+            Tidak ada kunjungan dengan No. Pendaftaran{" "}
+            <span className="font-mono text-slate-600">{enc.refId}</span> di SIMGOS.
+          </p>
+        </div>
+      )}
+
+      {enc && enc.found && (
+        <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          {/* ══ RAIL KIRI: identitas pasien + filter + navigasi famili ══ */}
+          <aside className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+            {/* Kartu identitas pasien (rekam medis) */}
+            <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+              <div className="relative bg-linear-to-br from-blue-50 via-white to-cyan-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-blue-200 bg-white text-blue-500 shadow-sm">
+                    <LuUser className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Rekam Medis Kunjungan
+                    </p>
+                    <h1 className="truncate text-base font-bold text-slate-900">
+                      {enc.patient ?? "Pasien —"}
+                    </h1>
+                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                      {enc.refId}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h1 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                    <LuUser className="h-4 w-4 shrink-0 text-slate-400" />
-                    <span className="truncate">{enc.patient ?? "Pasien —"}</span>
-                  </h1>
-                  <p className="mt-0.5 font-mono text-xs text-slate-500">
-                    No. Pendaftaran · {enc.refId}
+
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {enc.className && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${classTone(enc.classCode)}`}
+                    >
+                      <LuActivity className="h-3 w-3" />
+                      {enc.className}
+                    </span>
+                  )}
+                  {enc.status &&
+                    (() => {
+                      const t = toneFor(enc.status);
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${t ? TONE[t] : "bg-slate-100 text-slate-600 ring-slate-200"}`}
+                        >
+                          {STATUS_LABEL[enc.status] ?? enc.status}
+                        </span>
+                      );
+                    })()}
+                </div>
+
+                {(enc.start || enc.end) && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <LuCalendarClock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="min-w-0 truncate">
+                      {enc.start ?? "—"}
+                      {enc.end ? ` – ${enc.end}` : ""}
+                    </span>
                   </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {enc.className && (
+                )}
+              </div>
+
+              {/* Status kirim + progres keseluruhan */}
+              <div className="flex items-center gap-4 border-t border-slate-100 p-4">
+                <div className="relative shrink-0">
+                  <Ring pct={pctSent} />
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-700">
+                    {pctSent}%
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-lg font-bold text-emerald-600 tabular-nums">
+                      {fmt(totalSent)}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      / {fmt(totalItems)} terkirim
+                    </span>
+                  </div>
+                  {belumTotal > 0 ? (
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                      <LuClock className="h-3 w-3" />
+                      {fmt(belumTotal)} belum dikirim
+                    </p>
+                  ) : totalItems > 0 ? (
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                      <LuCircleCheck className="h-3 w-3" />
+                      Lengkap terkirim
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Belum ada resource
+                    </p>
+                  )}
+                  <div className="mt-2">
+                    {enc.sent ? (
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${classTone(enc.classCode)}`}
+                        className="inline-flex max-w-full items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200"
+                        title={enc.satuSehatId ?? undefined}
                       >
-                        <LuActivity className="h-3 w-3" />
-                        {enc.className}
-                        {enc.classCode ? ` · ${enc.classCode}` : ""}
+                        <LuCircleCheck className="h-3 w-3 shrink-0" />
+                        <span className="truncate">Encounter terkirim</span>
                       </span>
-                    )}
-                    {enc.status &&
-                      (() => {
-                        const t = toneFor(enc.status);
-                        return (
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${t ? TONE[t] : "bg-slate-100 text-slate-600 ring-slate-200"}`}
-                          >
-                            {STATUS_LABEL[enc.status] ?? enc.status}
-                          </span>
-                        );
-                      })()}
-                    {(enc.start || enc.end) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
-                        <LuCalendarClock className="h-3 w-3" />
-                        {enc.start ?? "—"}
-                        {enc.end ? ` – ${enc.end}` : ""}
+                    ) : encWaiting ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-200">
+                        <LuUserRoundX className="h-3 w-3" />
+                        Menunggu Patient
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200">
+                        <LuClock className="h-3 w-3" />
+                        Encounter belum dikirim
                       </span>
                     )}
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Status kirim encounter */}
-              <div className="shrink-0">
-                {enc.sent ? (
-                  <div className="flex flex-col items-start gap-1 sm:items-end">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
-                      <LuCircleCheck className="h-3.5 w-3.5" />
-                      Terkirim ke Satu Sehat
-                    </span>
-                    <span
-                      className="max-w-56 truncate font-mono text-[10px] text-slate-400"
-                      title={enc.satuSehatId ?? undefined}
-                    >
-                      {enc.satuSehatId}
-                    </span>
-                  </div>
-                ) : encWaiting ? (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700 ring-1 ring-orange-200"
-                    title="Encounter belum bisa dikirim: Patient belum ada di Satu Sehat"
+            {/* Kontrol: cari + filter */}
+            <div className="space-y-2.5 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm">
+              <div className="relative">
+                <LuSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cari di rekam medis…"
+                  aria-label="Cari resource"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50/60 py-1.5 pl-8 pr-8 text-xs text-slate-700 placeholder:text-slate-400 focus:border-teal-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/40 motion-reduce:transition-none"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Bersihkan pencarian"
+                    className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                   >
-                    <LuUserRoundX className="h-3.5 w-3.5" />
-                    Menunggu Patient
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
-                    <LuClock className="h-3.5 w-3.5" />
-                    Belum dikirim
-                  </span>
+                    <LuX className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Toggle
+                  active={onlyUnsent}
+                  onClick={() => setOnlyUnsent((v) => !v)}
+                  icon={<LuListFilter className="h-3.5 w-3.5" />}
+                  tone="amber"
+                >
+                  Belum terkirim
+                </Toggle>
+                <Toggle
+                  active={hideEmpty}
+                  onClick={() => setHideEmpty((v) => !v)}
+                  icon={<LuEyeOff className="h-3.5 w-3.5" />}
+                >
+                  Sembunyikan kosong
+                </Toggle>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none"
+                  >
+                    <LuChevronsUpDown className="h-3.5 w-3.5" />
+                    Buka
+                  </button>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none"
+                  >
+                    <LuChevronsDownUp className="h-3.5 w-3.5" />
+                    Tutup
+                  </button>
+                </div>
+                {anyFilter && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-teal-600 transition-colors hover:bg-teal-50"
+                  >
+                    <LuX className="h-3.5 w-3.5" />
+                    Reset
+                  </button>
                 )}
               </div>
             </div>
 
-            {/* Baris statistik total + progress terkirim */}
-            <div className="border-t border-slate-100 px-5 py-3">
-              <div className="grid grid-cols-3 divide-x divide-slate-100 text-center">
-                <div className="px-3">
-                  <p className="text-lg font-bold text-slate-800">{fmt(totalItems)}</p>
-                  <p className="text-[11px] text-slate-400">Total resource</p>
-                </div>
-                <div className="px-3">
-                  <p className="text-lg font-bold text-emerald-600">{fmt(totalSent)}</p>
-                  <p className="text-[11px] text-slate-400">Terkirim</p>
-                </div>
-                <div className="px-3">
-                  <p className="text-lg font-bold text-amber-600">{fmt(belumTotal)}</p>
-                  <p className="text-[11px] text-slate-400">Belum</p>
-                </div>
-              </div>
-              {totalItems > 0 && (
-                <div
-                  className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
-                  role="progressbar"
-                  aria-valuenow={Math.round((totalSent / totalItems) * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Progres pengiriman"
-                >
-                  <div
-                    className="h-full rounded-full bg-linear-to-r from-emerald-400 to-teal-500 transition-[width] duration-500 motion-reduce:transition-none"
-                    style={{ width: `${(totalSent / totalItems) * 100}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Toolbar filter interaktif ── */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <Toggle
-                active={onlyUnsent}
-                onClick={() => setOnlyUnsent((v) => !v)}
-                icon={<LuListFilter className="h-3.5 w-3.5" />}
-                tone="amber"
-              >
-                Hanya belum terkirim
-              </Toggle>
-              <Toggle
-                active={hideEmpty}
-                onClick={() => setHideEmpty((v) => !v)}
-                icon={<LuEyeOff className="h-3.5 w-3.5" />}
-              >
-                Sembunyikan kosong
-              </Toggle>
-              <span className="mx-1 h-4 w-px bg-slate-200" />
-              <button
-                type="button"
-                onClick={expandAll}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none"
-              >
-                <LuChevronsUpDown className="h-3.5 w-3.5" />
-                Buka semua
-              </button>
-              <button
-                type="button"
-                onClick={collapseAll}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none"
-              >
-                <LuChevronsDownUp className="h-3.5 w-3.5" />
-                Tutup semua
-              </button>
-            </div>
-            <p className="text-xs text-slate-400">
-              <span className="font-semibold text-slate-600">{fmt(withData)}</span>/
-              {fmt(groups.length)} berisi
-              {belumTotal > 0 && (
-                <>
-                  {" · "}
-                  <span className="font-semibold text-amber-600">
-                    {fmt(belumTotal)} belum
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-
-          {/* ── Strip navigasi resource (dikelompokkan per famili) ── */}
-          <nav
-            aria-label="Navigasi resource"
-            className="space-y-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
-          >
-            {families.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">
-                Tidak ada resource yang cocok dengan filter.
+            {/* Navigasi famili (chart index) */}
+            <nav
+              ref={railNavRef}
+              aria-label="Navigasi rekam medis"
+              className="rounded-2xl border border-slate-200/70 bg-white p-2 shadow-sm"
+            >
+              <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Bagian ({familyStats.length})
               </p>
-            ) : (
-              families.map((fam) => (
-                <div key={fam.family} className="space-y-1.5">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    {fam.family}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                    {fam.groups.map((g) => {
-                      const ac = accentOf(g.accent);
-                      const has = g.total > 0;
-                      const belum = g.total - g.sent;
-                      const pct = has ? Math.round((g.sent / g.total) * 100) : 0;
-                      const active = activeKey === g.key;
-                      return (
+              {familyStats.length === 0 ? (
+                <p className="px-2 py-3 text-[11px] text-slate-400">
+                  Tidak ada bagian yang cocok.
+                </p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {familyStats.map((f) => {
+                    const active = activeFamily === f.family;
+                    return (
+                      <li key={f.slug}>
                         <button
-                          key={g.key}
                           type="button"
-                          onClick={() => scrollToGroup(g.key)}
+                          data-fnav={f.family}
+                          onClick={() => scrollToFamily(f.slug)}
                           aria-current={active ? "true" : undefined}
-                          className={`group flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transform-none motion-reduce:transition-none ${
+                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 motion-reduce:transition-none ${
                             active
-                              ? "border-slate-300 bg-slate-50 ring-1 ring-slate-200"
-                              : has
-                                ? "border-slate-100 bg-white hover:border-slate-200"
-                                : "border-slate-100 bg-slate-50/60"
+                              ? "bg-slate-800 font-semibold text-white"
+                              : "text-slate-600 hover:bg-slate-100"
                           }`}
                         >
                           <span
-                            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-base ${
-                              has ? ac.icon : "bg-slate-100 text-slate-300 grayscale"
-                            }`}
-                          >
-                            {g.icon}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p
-                              className={`truncate text-xs font-semibold ${has ? "text-slate-700" : "text-slate-400"}`}
-                            >
-                              {g.label}
-                            </p>
-                            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className={`h-full rounded-full ${ac.bar}`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end">
-                            <span
-                              className={`text-sm font-bold tabular-nums ${has ? "text-slate-700" : "text-slate-300"}`}
-                            >
-                              {fmt(g.total)}
-                            </span>
-                            {belum > 0 && (
-                              <span className="text-[9px] font-bold text-amber-500">
-                                {fmt(belum)} belum
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-          </nav>
-
-          {/* ── Seksi rincian per resource (dikelompokkan per famili) ── */}
-          <div className="space-y-6">
-            {families.map((fam) => (
-              <div key={fam.family} className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-bold text-slate-700">{fam.family}</h2>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
-
-                {fam.groups.map((g) => {
-                  const ac = accentOf(g.accent);
-                  const has = g.total > 0;
-                  const belum = g.total - g.sent;
-                  const open = !collapsed.has(g.key);
-                  const shownItems = onlyUnsent
-                    ? g.items.filter((i) => !i.sent)
-                    : g.items;
-                  return (
-                    <section
-                      key={g.key}
-                      id={`res-${g.key}`}
-                      data-res={g.key}
-                      className={`scroll-mt-4 overflow-hidden rounded-2xl border shadow-sm transition-colors motion-reduce:transition-none ${
-                        activeKey === g.key ? "border-slate-300" : "border-slate-100"
-                      } ${has ? "bg-white" : "bg-slate-50/40"}`}
-                    >
-                      {/* Header (klik = lipat/buka) */}
-                      <button
-                        type="button"
-                        onClick={() => toggleCollapse(g.key)}
-                        aria-expanded={open}
-                        className="flex w-full flex-wrap items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400/50 motion-reduce:transition-none"
-                      >
-                        <span
-                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-lg ${
-                            has ? ac.icon : "bg-slate-100 text-slate-300 grayscale"
-                          }`}
-                        >
-                          {g.icon}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-slate-800">
-                            {g.label}
-                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-400">
-                              {g.resourceType}
-                            </span>
-                          </p>
-                        </div>
-
-                        {/* Badge ringkas: total, terkirim, belum (highlight) */}
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          {g.sent > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-100">
-                              <LuCircleCheck className="h-3 w-3" />
-                              {fmt(g.sent)}
-                            </span>
-                          )}
-                          {belum > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
-                              <LuClock className="h-3 w-3" />
-                              {fmt(belum)}
-                            </span>
-                          )}
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                              has ? `${ac.soft} ${ac.text}` : "bg-slate-100 text-slate-400"
-                            }`}
-                          >
-                            {fmt(g.total)}
-                          </span>
-                          <LuChevronDown
-                            className={`h-4 w-4 text-slate-400 transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-teal-300" : "bg-slate-300"}`}
                           />
-                        </div>
-                      </button>
-
-                      {/* Body (lipat halus via grid-rows) */}
-                      <div
-                        className={`grid border-t border-slate-100 transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
-                          open ? "grid-rows-[1fr]" : "grid-rows-[0fr] border-transparent"
-                        }`}
-                      >
-                        <div className="overflow-hidden">
-                          {has ? (
-                            <ul className="divide-y divide-slate-50">
-                              {shownItems.map((it, idx) => (
-                                <li
-                                  key={idx}
-                                  className="relative flex items-start justify-between gap-3 py-3 pr-5 pl-6 transition-colors hover:bg-slate-50/60 motion-reduce:transition-none"
-                                >
-                                  {/* Aksen kiri: hijau=terkirim, abu=belum (audit scan) */}
-                                  <span
-                                    className={`absolute top-3 bottom-3 left-3 w-1 rounded-full ${it.sent ? "bg-emerald-400" : "bg-slate-200"}`}
-                                    aria-hidden="true"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="wrap-break-word text-sm font-semibold text-slate-800">
-                                      {it.primary ?? (
-                                        <span className="text-slate-300">
-                                          (tanpa deskripsi)
-                                        </span>
-                                      )}
-                                    </p>
-                                    {it.meta.length > 0 && (
-                                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                        {it.meta.map((m, mi) => (
-                                          <MetaChip key={mi} m={m} />
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="shrink-0 pt-0.5">
-                                    {it.sent ? (
-                                      <span
-                                        className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-100"
-                                        title={it.satuSehatId ?? undefined}
-                                      >
-                                        <LuCircleCheck className="h-3 w-3" />
-                                        Terkirim
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
-                                        <LuClock className="h-3 w-3" />
-                                        Belum
-                                      </span>
-                                    )}
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="px-5 py-4 text-xs text-slate-400">
-                              Tidak ada data untuk kunjungan ini.
-                            </p>
+                          <span className="min-w-0 flex-1 truncate">{f.family}</span>
+                          {f.belum > 0 && (
+                            <span
+                              className={`shrink-0 rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
+                                active
+                                  ? "bg-amber-400/90 text-amber-950"
+                                  : "bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              {fmt(f.belum)}
+                            </span>
                           )}
+                          <span
+                            className={`shrink-0 text-[10px] font-bold tabular-nums ${active ? "text-slate-300" : "text-slate-400"}`}
+                          >
+                            {fmt(f.total)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </nav>
+          </aside>
 
-                          {g.truncated && (
-                            <p className="border-t border-slate-100 px-5 py-2 text-[11px] text-slate-400">
-                              Menampilkan 200 item pertama.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </section>
-                  );
-                })}
+          {/* ══ KOLOM KANAN: rekam medis dalam kartu multi-kolom ══ */}
+          <main className="min-w-0 space-y-6">
+            {families.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-400">
+                  <LuStethoscope className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold text-slate-600">
+                  {query.trim()
+                    ? "Tidak ada hasil untuk pencarian ini"
+                    : "Tidak ada resource yang cocok dengan filter"}
+                </p>
+                {anyFilter && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                  >
+                    <LuX className="h-3.5 w-3.5" />
+                    Bersihkan filter
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-        </>
+            ) : (
+              families.map((fam) => {
+                const stat = familyStats.find((f) => f.family === fam.family);
+                return (
+                  <section
+                    key={fam.family}
+                    id={`fam-${slugify(fam.family)}`}
+                    data-fam={fam.family}
+                    className="scroll-mt-4 space-y-3"
+                  >
+                    {/* Kepala famili */}
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-sm font-bold text-slate-700">
+                        {fam.family}
+                      </h2>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500 tabular-nums">
+                        {fmt(stat?.total ?? 0)}
+                      </span>
+                      {stat && stat.belum > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+                          <LuClock className="h-3 w-3" />
+                          {fmt(stat.belum)} belum
+                        </span>
+                      )}
+                      <div className="h-px flex-1 bg-slate-100" />
+                    </div>
+
+                    {/* Kartu resource → kolom masonry (tinggi kartu beragam
+                        diseimbangkan otomatis → tanpa celah/berantakan) */}
+                    <div className="columns-1 gap-3 md:columns-2 2xl:columns-3">
+                      {fam.rows.map(({ g, items }) => {
+                        const ac = accentOf(g.accent);
+                        const has = g.total > 0;
+                        const belum = g.total - g.sent;
+                        const pct = has ? Math.round((g.sent / g.total) * 100) : 0;
+                        const open = !collapsed.has(g.key);
+                        const showAll = expandedItems.has(g.key);
+                        const visible = showAll ? items : items.slice(0, ITEM_CAP);
+                        const hiddenCount = items.length - visible.length;
+                        return (
+                          <section
+                            key={g.key}
+                            data-res={g.key}
+                            className={`relative mb-3 flex w-full break-inside-avoid flex-col overflow-hidden rounded-2xl border shadow-sm transition-shadow hover:shadow-md motion-reduce:transition-none ${
+                              has ? "border-slate-200/70 bg-white" : "border-slate-100 bg-slate-50/40"
+                            }`}
+                          >
+                            {/* Tulang punggung aksen (identitas resource) */}
+                            <span
+                              className={`absolute inset-y-0 left-0 w-1 ${has ? ac.spine : "bg-slate-200"}`}
+                              aria-hidden="true"
+                            />
+
+                            {/* Header — klik untuk lipat/buka */}
+                            <button
+                              type="button"
+                              onClick={() => toggleCollapse(g.key)}
+                              aria-expanded={open}
+                              className="flex w-full items-center gap-2.5 py-3 pl-4 pr-3 text-left transition-colors hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400/50 motion-reduce:transition-none"
+                            >
+                              <span
+                                className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-lg ${
+                                  has ? ac.icon : "bg-slate-100 text-slate-300 grayscale"
+                                }`}
+                              >
+                                {g.icon}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className={`truncate text-sm font-bold ${has ? "text-slate-800" : "text-slate-400"}`}
+                                >
+                                  {g.label}
+                                </p>
+                                <p className="truncate font-mono text-[10px] text-slate-400">
+                                  {g.resourceType}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                {belum > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
+                                    <LuClock className="h-2.5 w-2.5" />
+                                    {fmt(belum)}
+                                  </span>
+                                )}
+                                <span
+                                  className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
+                                    has ? `${ac.soft} ${ac.text}` : "bg-slate-100 text-slate-400"
+                                  }`}
+                                >
+                                  {fmt(g.total)}
+                                </span>
+                                <LuChevronDown
+                                  className={`h-4 w-4 text-slate-400 transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+                                />
+                              </div>
+                            </button>
+
+                            {/* Bar progres tipis (terkirim) */}
+                            {has && (
+                              <div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className={`h-full rounded-full ${ac.bar} transition-[width] duration-500 motion-reduce:transition-none`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Body — daftar item (lipat halus) */}
+                            <div
+                              className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
+                                open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                              }`}
+                            >
+                              <div className="overflow-hidden">
+                                <div className="border-t border-slate-100">
+                                  {has && items.length > 0 ? (
+                                    <>
+                                      <ul className="divide-y divide-slate-50">
+                                        {visible.map((it, idx) => (
+                                          <li
+                                            key={idx}
+                                            className="flex items-start gap-2.5 py-2.5 pl-4 pr-3 transition-colors hover:bg-slate-50/60 motion-reduce:transition-none"
+                                          >
+                                            <span
+                                              className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${it.sent ? "bg-emerald-400 ring-2 ring-emerald-100" : "bg-slate-300 ring-2 ring-slate-100"}`}
+                                              title={
+                                                it.sent
+                                                  ? (it.satuSehatId ?? "Terkirim")
+                                                  : "Belum dikirim"
+                                              }
+                                              aria-hidden="true"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                              <p className="wrap-break-word text-[13px] font-semibold leading-snug text-slate-800">
+                                                {it.primary ?? (
+                                                  <span className="font-normal text-slate-300">
+                                                    (tanpa deskripsi)
+                                                  </span>
+                                                )}
+                                              </p>
+                                              {it.meta.length > 0 && (
+                                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                                  {it.meta.map((m, mi) => (
+                                                    <MetaChip key={mi} m={m} />
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                            <span
+                                              className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full ${it.sent ? "text-emerald-500" : "text-amber-400"}`}
+                                              title={it.sent ? "Terkirim" : "Belum"}
+                                            >
+                                              {it.sent ? (
+                                                <LuCircleCheck className="h-3.5 w-3.5" />
+                                              ) : (
+                                                <LuClock className="h-3.5 w-3.5" />
+                                              )}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
+
+                                      {hiddenCount > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleItems(g.key)}
+                                          className="flex w-full items-center justify-center gap-1 border-t border-slate-100 py-2 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400/50"
+                                        >
+                                          <LuChevronDown className="h-3.5 w-3.5" />
+                                          Lihat {fmt(hiddenCount)} lainnya
+                                        </button>
+                                      )}
+                                      {showAll && items.length > ITEM_CAP && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleItems(g.key)}
+                                          className="flex w-full items-center justify-center gap-1 border-t border-slate-100 py-2 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400/50"
+                                        >
+                                          <LuChevronDown className="h-3.5 w-3.5 rotate-180" />
+                                          Ringkas
+                                        </button>
+                                      )}
+                                      {g.truncated && (
+                                        <p className="border-t border-slate-100 px-4 py-1.5 text-[10px] text-slate-400">
+                                          Menampilkan 200 item pertama.
+                                        </p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="px-4 py-3 pl-4 text-[11px] text-slate-400">
+                                      {onlyUnsent && g.total > 0
+                                        ? "Semua item sudah terkirim."
+                                        : "Tidak ada data untuk kunjungan ini."}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })
+            )}
+          </main>
+        </div>
       )}
     </div>
   );
