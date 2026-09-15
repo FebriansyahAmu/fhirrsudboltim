@@ -75,6 +75,7 @@ export default function ConditionSyncPanel({
         title={`Condition · ${active.label}`}
         onUsePayload={onUsePayload}
         enableQueue
+        enableKeySearch
         defaultOpen
       />
     </div>

@@ -386,6 +386,9 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "condition",
     keyCol: "refId",
     keyLabel: "No. Diagnosis",
+    // Cari baris berdasarkan No. Pendaftaran (nopen), bukan refId (id diagnosa).
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
     readyFlag: "send",
     orderCol: "refId",
     columns: [
@@ -412,6 +415,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "condition_anamnesis",
     keyCol: "refId",
     keyLabel: "No. Diagnosis",
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
     readyFlag: "send",
     orderCol: "refId",
     columns: [
@@ -438,6 +443,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "condition_riwayat_penyakit_dahulu",
     keyCol: "refId",
     keyLabel: "No. Diagnosis",
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
     readyFlag: "send",
     orderCol: "refId",
     columns: [
@@ -464,6 +471,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "condition_hasil_pa",
     keyCol: "refId",
     keyLabel: "No. Diagnosis",
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
     readyFlag: "send",
     orderCol: "refId",
     columns: [
@@ -490,6 +499,8 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     table: "condition_penilaian_tumor",
     keyCol: "refId",
     keyLabel: "No. Diagnosis",
+    searchCol: "nopen",
+    searchLabel: "No. Pendaftaran",
     readyFlag: "send",
     orderCol: "refId",
     columns: [

@@ -261,6 +261,23 @@ function fmt(n: number) {
   return n.toLocaleString("id-ID");
 }
 
+/**
+ * Label pemisah grup tombol di toolbar (khusus panel Encounter). `basis-full`
+ * memaksa header memenuhi satu baris di dalam flex-wrap → mengelompokkan tombol
+ * di bawahnya secara visual. Dipakai untuk memisahkan aksi: Status Selesai /
+ * Diagnosis / Koreksi Status / Kirim Ulang / Tinjau.
+ */
+function ToolGroupLabel({ label }: { label: string }) {
+  return (
+    <div className="mt-1.5 flex basis-full items-center gap-2 first:mt-0">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-slate-100" />
+    </div>
+  );
+}
+
 /** Format ISO → "07 Jun 2026, 12.22" (id-ID). Fallback ke string asli. */
 function fmtDateTimeShort(iso: string | null): string {
   if (!iso) return "—";
@@ -2130,6 +2147,9 @@ export default function ModuleSyncPanel({
                     Muat ulang
                   </button>
 
+                  {enableEncounterFinished && (
+                    <ToolGroupLabel label="Status Selesai" />
+                  )}
                   {/* Sesuaikan (retroaktif): salin id upstream terkirim ke
                       referensi hilir di SIMGOS. Specimen / Medication. */}
                   {reconcileCfg &&
@@ -2279,6 +2299,9 @@ export default function ModuleSyncPanel({
                     </span>
                   )}
 
+                  {enableEncounterFinished && (
+                    <ToolGroupLabel label="Diagnosis" />
+                  )}
                   {/* Encounter: LENGKAPI diagnosis (Rule 10457) dari Condition
                       terkirim untuk encounter yg diagnosis-nya NULL. UPDATE-only,
                       tak menyentuh send/status. */}
@@ -2365,6 +2388,9 @@ export default function ModuleSyncPanel({
                     </span>
                   )}
 
+                  {enableEncounterFinished && (
+                    <ToolGroupLabel label="Koreksi Status" />
+                  )}
                   {/* Encounter: KEMBALIKAN 'finished' → in-progress utk encounter
                       TANPA Condition terkirim (tak bisa dikirim finished). Perbaiki
                       salah-tanda reconcile lama. UPDATE-only. */}
@@ -2451,6 +2477,9 @@ export default function ModuleSyncPanel({
                     </span>
                   )}
 
+                  {enableEncounterRePut && (
+                    <ToolGroupLabel label="Kirim Ulang ke Satu Sehat" />
+                  )}
                   {/* Encounter: PUT ulang yang SUDAH terkirim & kini 'finished'
                       → status di Satu Sehat ikut terkoreksi. */}
                   {enableEncounterRePut &&
@@ -2550,6 +2579,7 @@ export default function ModuleSyncPanel({
                     </span>
                   )}
 
+                  {enableEncounterFinished && <ToolGroupLabel label="Tinjau" />}
                   {/* Encounter: daftar durasi TIDAK WAJAR (disisihkan reconcile). */}
                   {enableEncounterFinished && (
                     <button
