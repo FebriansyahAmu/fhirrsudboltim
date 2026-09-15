@@ -17,6 +17,7 @@ import {
   simgosQuery,
   simgosReconcileEncounterFinished,
   simgosReconcileEncounterDiagnosis,
+  simgosRevertEncounterInProgress,
   ENCOUNTER_SANE_MAX_HOURS_SQL,
 } from "@/app/lib/db/simgos";
 import { upsertNote, resolveKuningNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
@@ -130,6 +131,30 @@ export async function reconcileEncounterDiagnosis(
     if (p) refIdTo = p + "9999";
   }
   return simgosReconcileEncounterDiagnosis({ limit, refIdFrom, refIdTo });
+}
+
+/**
+ * RECONCILE massal: KEMBALIKAN status 'finished' → status asli SIMGOS untuk
+ * encounter yang ditandai finished TAPI tanpa Condition terkirim (tak bisa
+ * dikirim finished). Memperbaiki data yang terlanjur salah ditandai. Tak
+ * menyentuh `send`. `limit` → UJI N baris terbaru; `from`/`to` → scope rentang.
+ * Return jumlah encounter ter-update.
+ */
+export async function revertEncounterInProgress(
+  opts: { limit?: number; from?: string; to?: string } = {},
+): Promise<number> {
+  const { limit, from, to } = opts;
+  let refIdFrom: string | undefined;
+  let refIdTo: string | undefined;
+  if (from) {
+    const p = toYymmdd6(from);
+    if (p) refIdFrom = p + "0000";
+  }
+  if (to) {
+    const p = toYymmdd6(to);
+    if (p) refIdTo = p + "9999";
+  }
+  return simgosRevertEncounterInProgress({ limit, refIdFrom, refIdTo });
 }
 
 export interface EncounterDurationAnomaly {

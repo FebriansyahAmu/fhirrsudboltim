@@ -593,6 +593,12 @@ export default function ModuleSyncPanel({
   const [diagReconRange, setDiagReconRange] = useState(false);
   const [diagReconResult, setDiagReconResult] = useState<number | null>(null);
   const [diagReconError, setDiagReconError] = useState<string | null>(null);
+  // Encounter: KEMBALIKAN 'finished' → in-progress utk yg tanpa Condition terkirim.
+  const [revertRunning, setRevertRunning] = useState(false);
+  const [revertArmed, setRevertArmed] = useState(false);
+  const [revertRange, setRevertRange] = useState(false);
+  const [revertResult, setRevertResult] = useState<number | null>(null);
+  const [revertError, setRevertError] = useState<string | null>(null);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -733,7 +739,8 @@ export default function ModuleSyncPanel({
     specReconRunning ||
     trigRunning ||
     dateReconRunning ||
-    diagReconRunning;
+    diagReconRunning ||
+    revertRunning;
 
   // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only). Runner generik
   // (POST ke /api/ihs/<module>/reconcile). `body` = payload tambahan (mis.
@@ -1904,6 +1911,40 @@ export default function ModuleSyncPanel({
     [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
   );
 
+  // Encounter: KEMBALIKAN status 'finished' → asli (in-progress) utk encounter
+  // tanpa Condition terkirim (salah-tanda reconcile lama). action:"revert-
+  // inprogress"; useRange → scope rentang tanggal. UPDATE-only.
+  const revertRun = useCallback(
+    async (useRange: boolean) => {
+      if (busy) return;
+      setRevertArmed(false);
+      setRevertRunning(true);
+      setRevertResult(null);
+      setRevertError(null);
+      try {
+        const res = await fetch(`/api/ihs/${module}/reconcile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "revert-inprogress",
+            ...(useRange && dateFrom ? { from: dateFrom } : {}),
+            ...(useRange && dateTo ? { to: dateTo } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) setRevertError(json?.error ?? "Gagal mengembalikan status");
+        else setRevertResult(Number(json?.updated ?? 0));
+      } catch {
+        setRevertError("Gagal menghubungi server");
+      } finally {
+        setRevertRunning(false);
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+      }
+    },
+    [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
+
   // Runner tombol PEMICU HILIR KEDUA (triggerCfg) — sejajar specReconRun, state
   // terpisah, selalu mengirim body { action: "trigger" }.
   const trigRun = useCallback(
@@ -2321,6 +2362,92 @@ export default function ModuleSyncPanel({
                   {enableEncounterFinished && diagReconError && (
                     <span className="text-[11px] font-medium text-red-500">
                       {diagReconError}
+                    </span>
+                  )}
+
+                  {/* Encounter: KEMBALIKAN 'finished' → in-progress utk encounter
+                      TANPA Condition terkirim (tak bisa dikirim finished). Perbaiki
+                      salah-tanda reconcile lama. UPDATE-only. */}
+                  {enableEncounterFinished &&
+                    (revertRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Mengembalikan…
+                      </span>
+                    ) : revertArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2 py-1 ring-1 ring-rose-200">
+                        <span className="pl-1 text-[11px] font-semibold text-rose-800">
+                          {revertRange
+                            ? "Kembalikan ke in-progress HANYA rentang terpilih?"
+                            : "Kembalikan SEMUA finished tanpa Condition terkirim?"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => revertRun(revertRange)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-rose-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, kembalikan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRevertArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRevertResult(null);
+                            setRevertError(null);
+                            setRevertRange(false);
+                            setRevertArmed(true);
+                          }}
+                          disabled={loading || busy}
+                          title="Kembalikan status 'finished' → in-progress untuk encounter yang TAK punya Condition terkirim (jadi tak akan bisa dikirim sebagai finished). Memperbaiki data yang salah ditandai reconcile. UPDATE-only, tak menyentuh send. Idempotent."
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuRefreshCw className="h-3.5 w-3.5" />
+                          Kembalikan In-progress
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRevertResult(null);
+                            setRevertError(null);
+                            setRevertRange(true);
+                            setRevertArmed(true);
+                          }}
+                          disabled={loading || busy || (!dateFrom && !dateTo)}
+                          title={
+                            !dateFrom && !dateTo
+                              ? "Pilih rentang tanggal dulu (di atas) untuk mengembalikan hanya di rentang itu."
+                              : "Kembalikan ke in-progress HANYA encounter dalam rentang tanggal terpilih."
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuRefreshCw className="h-3.5 w-3.5" />
+                          (rentang)
+                        </button>
+                      </div>
+                    ))}
+
+                  {enableEncounterFinished &&
+                    revertResult != null &&
+                    !revertRunning && (
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {revertResult > 0
+                          ? `${fmt(revertResult)} dikembalikan ke in-progress`
+                          : "Tidak ada yang perlu dikembalikan"}
+                      </span>
+                    )}
+                  {enableEncounterFinished && revertError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {revertError}
                     </span>
                   )}
 

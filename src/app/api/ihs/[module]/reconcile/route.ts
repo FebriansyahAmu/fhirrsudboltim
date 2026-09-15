@@ -22,6 +22,7 @@ import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeba
 import {
   reconcileEncounterFinished,
   reconcileEncounterDiagnosis,
+  revertEncounterInProgress,
   listEncounterDurationAnomalies,
 } from "@/app/lib/dal/encounter-writeback";
 import {
@@ -179,6 +180,23 @@ export async function POST(
         return NextResponse.json({ anomalies, count: anomalies.length });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Gagal memuat anomali";
+        return NextResponse.json({ error: msg }, { status: 502 });
+      }
+    }
+    // action="revert-inprogress" → KEMBALIKAN status 'finished' → asli SIMGOS
+    // untuk encounter tanpa Condition terkirim (tak bisa dikirim finished).
+    // Memperbaiki data salah-tanda. UPDATE-only, tak menyentuh send.
+    if (action === "revert-inprogress") {
+      try {
+        const updated = await revertEncounterInProgress({ limit, from, to });
+        return NextResponse.json({
+          updated,
+          pilot: limit != null,
+          scoped: from != null || to != null,
+          done: true,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Gagal mengembalikan status";
         return NextResponse.json({ error: msg }, { status: 502 });
       }
     }

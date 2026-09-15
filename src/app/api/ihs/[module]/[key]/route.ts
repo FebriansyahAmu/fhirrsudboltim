@@ -146,6 +146,38 @@ export async function GET(
         }
       }
 
+      // TURUNKAN status → 'in-progress' bila 'finished' TAPI diagnosis tetap tak
+      // bisa dilampirkan (Condition belum terkirim). Ini memperbaiki bug urutan
+      // lifecycle: reconcile menandai `finished` di staging tanpa cek Condition,
+      // padahal Satu Sehat menuntut `diagnosis` untuk finished (Rule 10457) — dan
+      // Condition BARU bisa dikirim SETELAH Encounter ada (Condition mereferensi
+      // Encounter/id). Chicken-and-egg. Jalur yang benar: POST 'in-progress' dulu
+      // (tanpa diagnosis) → kirim Condition → PUT 'finished'+diagnosis (re-PUT).
+      // Bentuk in-progress yang terbukti diterima Satu Sehat: period TANPA end &
+      // entri statusHistory terakhir TERBUKA (Rule 10122 hanya menuntut end utk
+      // transisi yang sudah selesai). Karena itu period.end dibuang di sini, dan
+      // blok penutup statusHistory di bawah otomatis dilewati (gerbang 'finished').
+      const diagReady =
+        Array.isArray(payload.diagnosis) && payload.diagnosis.length > 0;
+      if (payload.status === "finished" && !diagReady) {
+        payload.status = "in-progress";
+        enriched.push("status→in-progress");
+      }
+
+      // in-progress ⟹ TANPA period.end. Bentuk in-progress yang terbukti
+      // diterima Satu Sehat adalah period `{start}` saja (encounter dianggap
+      // masih berjalan). Berlaku untuk yang baru diturunkan DI ATAS maupun yang
+      // status staging-nya memang sudah in-progress tapi period.end-nya basi
+      // (mis. baris yang di-revert `simgosRevertEncounterInProgress`, yg period-
+      // nya tetap punya end). No-op bila memang sudah tanpa end.
+      if (
+        payload.status === "in-progress" &&
+        payload.period &&
+        typeof payload.period === "object"
+      ) {
+        delete (payload.period as Record<string, unknown>).end;
+      }
+
       // statusHistory: Satu Sehat Rule 10122 mewajibkan SETIAP entri punya period
       // start DAN end. SIMGOS menyimpan status berjalan (mis. in-progress) dengan
       // period TERBUKA (tanpa end). Setelah status dinaikkan ke 'finished', period

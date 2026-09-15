@@ -22,6 +22,11 @@
 //         dari Condition terkirim (SALINAN blok trigger `encounter_before_
 //         update`), utk encounter yg diagnosis-nya NULL; tanpa menyentuh
 //         `send` → tak mengklobber status. Cegah Rule 10457.
+//      7. `simgosRevertEncounterInProgress` — UPDATE `encounter.status` dari
+//         'finished' KEMBALI ke status asli (`getStatusPendaftaran`) utk
+//         encounter yg ditandai finished TAPI tanpa Condition terkirim (tak
+//         akan bisa dikirim finished). Tanpa `send`. Menegakkan finished ⟺
+//         ada Condition terkirim.
 //    Selain fungsi-fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
 //    TRUNCATE/REPLACE, dll.) TETAP DITOLAK oleh `assertAllowedStatement`
 //    sebagai pertahanan berlapis, dan `multipleStatements:false`
@@ -291,7 +296,10 @@ export const ENCOUNTER_SANE_MAX_HOURS_SQL =
  * pernah terjadi). Akibatnya ~99% encounter mandek `in-progress` walau pasien
  * sudah pulang. Kita BYPASS syarat tagihan itu & validasi selesai dari sumber
  * yang benar: baris kunjungan INTI (`REF IS NULL`) sudah `KELUAR` & `STATUS=2`,
- * DAN ada diagnosa (`medicalrecord.diagnosa`) untuk NOPEN tsb.
+ * DAN ada diagnosa (`medicalrecord.diagnosa`), DAN ada Condition yang SUDAH
+ * TERKIRIM (punya id) untuk NOPEN tsb — sumber `Encounter.diagnosis` (Rule
+ * 10457). Tanpa Condition terkirim, finished tak akan bisa dikirim → maka TIDAK
+ * ditandai finished (menegakkan: status='finished' ⟺ ada Condition terkirim).
  *
  * AMAN terhadap trigger: statement TIDAK menyentuh kolom `send`, sehingga
  * gerbang `encounter_before_update` (`NEW.send=1 AND OLD.send!=NEW.send`) tak
@@ -338,7 +346,67 @@ export async function simgosReconcileEncounterFinished(
     ENCOUNTER_SANE_MAX_HOURS_SQL +
     ") " +
     "AND EXISTS (SELECT 1 FROM `medicalrecord`.`diagnosa` d " +
-    "  WHERE d.`NOPEN` = e.`refId`)";
+    "  WHERE d.`NOPEN` = e.`refId`) " +
+    // SYARAT KRITIS: hanya finish bila ADA Condition yang SUDAH TERKIRIM (punya
+    // id) — sumber `diagnosis` (Rule 10457). Tanpa ini, encounter ditandai
+    // finished padahal diagnosis tak akan bisa dibangun → POST/PUT ditolak. Ini
+    // menegakkan aturan: status='finished' ⟺ ada Condition terkirim.
+    "AND EXISTS (SELECT 1 FROM `kemkes-ihs`.`condition` co " +
+    "  WHERE co.`nopen` = e.`refId` AND co.`id` IS NOT NULL)";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    let sql = base;
+    if (limit && limit > 0) {
+      sql += " ORDER BY e.`refId` DESC LIMIT ?";
+      params.push(limit);
+    }
+    const res = await conn.query(sql, params);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Tulis TERSANKSI ke-7: KEMBALIKAN `encounter.status` dari 'finished' ke status
+ * asli SIMGOS (`getStatusPendaftaran` → 'in-progress') untuk encounter yang
+ * DITANDAI finished TAPI TAK punya Condition terkirim — sehingga tak akan pernah
+ * bisa dikirim sebagai finished (butuh `diagnosis`, Rule 10457). Ini MEMPERBAIKI
+ * data yang terlanjur salah ditandai reconcile lama (yang belum mensyaratkan
+ * Condition terkirim).
+ *
+ * AMAN: hanya menyentuh `status` (bukan `send`) → gerbang `encounter_before_
+ * update` tak aktif, tak ada rebuild/klobber. `period` DIBIARKAN (data KELUAR
+ * nyata); payload in-progress otomatis membuang `period.end` di sisi baca.
+ * Idempotent (`status='finished'` + NOT EXISTS Condition terkirim). `limit`
+ * (opsional) → UJI N baris terbaru dulu. Return jumlah baris ter-update.
+ */
+export async function simgosRevertEncounterInProgress(
+  opts: { limit?: number; refIdFrom?: string; refIdTo?: string } = {},
+): Promise<number> {
+  const { limit, refIdFrom, refIdTo } = opts;
+  const params: unknown[] = [];
+  let dateSql = "";
+  if (refIdFrom != null) {
+    if (!/^\d{10}$/.test(refIdFrom))
+      throw new Error("refIdFrom Encounter tidak valid");
+    dateSql += " AND e.`refId` >= ?";
+    params.push(refIdFrom);
+  }
+  if (refIdTo != null) {
+    if (!/^\d{10}$/.test(refIdTo))
+      throw new Error("refIdTo Encounter tidak valid");
+    dateSql += " AND e.`refId` <= ?";
+    params.push(refIdTo);
+  }
+  const base =
+    "UPDATE `kemkes-ihs`.`encounter` e " +
+    "SET e.`status` = `kemkes-ihs`.`getStatusPendaftaran`(e.`refId`) " +
+    "WHERE e.`status` = 'finished'" +
+    dateSql +
+    " AND NOT EXISTS (SELECT 1 FROM `kemkes-ihs`.`condition` co " +
+    "  WHERE co.`nopen` = e.`refId` AND co.`id` IS NOT NULL)";
   const pool = getPool();
   const conn = await pool.getConnection();
   try {
