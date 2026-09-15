@@ -16,6 +16,7 @@ import {
   simgosExecute,
   simgosQuery,
   simgosReconcileEncounterFinished,
+  simgosReconcileEncounterDiagnosis,
   ENCOUNTER_SANE_MAX_HOURS_SQL,
 } from "@/app/lib/db/simgos";
 import { upsertNote, resolveKuningNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
@@ -105,6 +106,30 @@ export async function reconcileEncounterFinished(
     if (p) refIdTo = p + "9999";
   }
   return simgosReconcileEncounterFinished({ limit, refIdFrom, refIdTo });
+}
+
+/**
+ * RECONCILE massal: isi `encounter.diagnosis` (staging) dari Condition yang SUDAH
+ * terkirim, untuk encounter yang diagnosis-nya masih NULL. Membereskan Rule 10457
+ * secara permanen di staging (bukan hanya read-side). Tak menyentuh `send` → tak
+ * mengklobber status. Idempotent. `limit` → UJI N baris terbaru dulu; `from`/`to`
+ * → scope rentang tanggal (via refId YYMMDD). Return jumlah encounter ter-update.
+ */
+export async function reconcileEncounterDiagnosis(
+  opts: { limit?: number; from?: string; to?: string } = {},
+): Promise<number> {
+  const { limit, from, to } = opts;
+  let refIdFrom: string | undefined;
+  let refIdTo: string | undefined;
+  if (from) {
+    const p = toYymmdd6(from);
+    if (p) refIdFrom = p + "0000";
+  }
+  if (to) {
+    const p = toYymmdd6(to);
+    if (p) refIdTo = p + "9999";
+  }
+  return simgosReconcileEncounterDiagnosis({ limit, refIdFrom, refIdTo });
 }
 
 export interface EncounterDurationAnomaly {

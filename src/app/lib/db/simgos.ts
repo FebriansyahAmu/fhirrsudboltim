@@ -18,6 +18,10 @@
 //         'finished' (+ period.end via `getPeriode`) utk encounter yang benar-
 //         benar selesai (kunjungan inti KELUAR & STATUS=2 + ada diagnosa);
 //         sumber SIMGOS cuma punya flag Aktif/Batal, tak pernah 'finished'.
+//      6. `simgosReconcileEncounterDiagnosis` — UPDATE `encounter.diagnosis`
+//         dari Condition terkirim (SALINAN blok trigger `encounter_before_
+//         update`), utk encounter yg diagnosis-nya NULL; tanpa menyentuh
+//         `send` → tak mengklobber status. Cegah Rule 10457.
 //    Selain fungsi-fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
 //    TRUNCATE/REPLACE, dll.) TETAP DITOLAK oleh `assertAllowedStatement`
 //    sebagai pertahanan berlapis, dan `multipleStatements:false`
@@ -335,6 +339,102 @@ export async function simgosReconcileEncounterFinished(
     ") " +
     "AND EXISTS (SELECT 1 FROM `medicalrecord`.`diagnosa` d " +
     "  WHERE d.`NOPEN` = e.`refId`)";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    let sql = base;
+    if (limit && limit > 0) {
+      sql += " ORDER BY e.`refId` DESC LIMIT ?";
+      params.push(limit);
+    }
+    const res = await conn.query(sql, params);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * SELECT (konstanta) yang MEMBANGUN `encounter.diagnosis` dari Condition yang
+ * SUDAH terkirim (`id IS NOT NULL`) untuk sebuah NOPEN — SALINAN PERSIS dari
+ * blok di dalam trigger `encounter_before_update`, agar hasilnya identik dgn
+ * yang seharusnya dimaterialisasi SIMGOS. `use` = DD (Discharge diagnosis) via
+ * `getObJectReference(4,1)`; `rank` = `medicalrecord.diagnosa.UTAMA` (1=utama,
+ * 2=sekunder …). Dipakai bersama oleh writeback (di bawah) & enrichment read-
+ * side. Placeholder `?` = NOPEN (refId Encounter).
+ */
+export const ENCOUNTER_DIAGNOSIS_BUILD_SQL =
+  "SELECT JSON_ARRAYAGG(JSON_OBJECT(" +
+  "  'condition', JSON_OBJECT(" +
+  "    'reference', CONCAT('Condition/', co.`id`)," +
+  "    'display', JSON_UNQUOTE(JSON_EXTRACT(co.`code`, '$.coding[0].display'))" +
+  "  )," +
+  "  'use', JSON_OBJECT('coding', JSON_ARRAY(`kemkes-ihs`.`getObJectReference`(4, 1)))," +
+  "  'rank', diag.`UTAMA`" +
+  ")) AS diagnosis " +
+  "FROM `kemkes-ihs`.`condition` co " +
+  "LEFT JOIN `medicalrecord`.`diagnosa` diag ON diag.`ID` = co.`refId` " +
+  "WHERE co.`nopen` = ? AND co.`id` IS NOT NULL";
+
+/**
+ * Tulis TERSANKSI ke-6: isi `encounter.diagnosis` dari Condition yang sudah
+ * terkirim, untuk encounter yang `diagnosis`-nya masih NULL.
+ *
+ * Kenapa perlu: `encounter.diagnosis` HANYA dibangun trigger `encounter_before_
+ * update` saat `encounter.send` transisi 0→1 — kick yang datang dari
+ * `condition_after_update` HANYA bila `condition.send` di-flip 1→0. Aplikasi tak
+ * pernah flip itu, jadi encounter yang Condition-nya sudah terkirim tetap
+ * `diagnosis` NULL → Satu Sehat menolak Encounter finished (Rule 10457
+ * "Element not found: Encounter.diagnosis"). Flip send BUKAN opsi: trigger yg
+ * sama akan meng-overwrite `status` balik ke `getStatusPendaftaran` (in-progress)
+ * → mengklobber hasil reconcile 'finished'.
+ *
+ * AMAN terhadap trigger: statement TIDAK menyentuh `send` (hanya `diagnosis`),
+ * jadi gerbang `encounter_before_update` (`NEW.send=1 AND OLD.send!=NEW.send`)
+ * tak aktif → tak ada rebuild/klobber status maupun cascade. Idempotent
+ * (`diagnosis IS NULL`), hasil IDENTIK trigger (subquery = ENCOUNTER_DIAGNOSIS_
+ * BUILD_SQL). `limit` (opsional) → UJI N baris TERBARU dulu. Return jumlah baris
+ * ter-update.
+ */
+export async function simgosReconcileEncounterDiagnosis(
+  opts: { limit?: number; refIdFrom?: string; refIdTo?: string } = {},
+): Promise<number> {
+  const { limit, refIdFrom, refIdTo } = opts;
+  const params: unknown[] = [];
+  let dateSql = "";
+  if (refIdFrom != null) {
+    if (!/^\d{10}$/.test(refIdFrom))
+      throw new Error("refIdFrom Encounter tidak valid");
+    dateSql += " AND e.`refId` >= ?";
+    params.push(refIdFrom);
+  }
+  if (refIdTo != null) {
+    if (!/^\d{10}$/.test(refIdTo))
+      throw new Error("refIdTo Encounter tidak valid");
+    dateSql += " AND e.`refId` <= ?";
+    params.push(refIdTo);
+  }
+  // Subquery pembangun = SALINAN trigger, dikorelasikan ke e.refId. Hanya
+  // menyentuh baris yg PUNYA Condition terkirim (EXISTS) & diagnosis masih NULL.
+  const base =
+    "UPDATE `kemkes-ihs`.`encounter` e " +
+    "SET e.`diagnosis` = (" +
+    "  SELECT JSON_ARRAYAGG(JSON_OBJECT(" +
+    "    'condition', JSON_OBJECT(" +
+    "      'reference', CONCAT('Condition/', co.`id`)," +
+    "      'display', JSON_UNQUOTE(JSON_EXTRACT(co.`code`, '$.coding[0].display'))" +
+    "    )," +
+    "    'use', JSON_OBJECT('coding', JSON_ARRAY(`kemkes-ihs`.`getObJectReference`(4, 1)))," +
+    "    'rank', diag.`UTAMA`" +
+    "  )) " +
+    "  FROM `kemkes-ihs`.`condition` co " +
+    "  LEFT JOIN `medicalrecord`.`diagnosa` diag ON diag.`ID` = co.`refId` " +
+    "  WHERE co.`nopen` = e.`refId` AND co.`id` IS NOT NULL" +
+    ") " +
+    "WHERE e.`diagnosis` IS NULL" +
+    dateSql +
+    " AND EXISTS (SELECT 1 FROM `kemkes-ihs`.`condition` co " +
+    "  WHERE co.`nopen` = e.`refId` AND co.`id` IS NOT NULL)";
   const pool = getPool();
   const conn = await pool.getConnection();
   try {

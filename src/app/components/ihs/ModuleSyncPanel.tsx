@@ -586,6 +586,13 @@ export default function ModuleSyncPanel({
   const [dateReconError, setDateReconError] = useState<string | null>(null);
   // Encounter re-PUT: mode saat di-arm — false = SEMUA, true = rentang tanggal.
   const [rePutRange, setRePutRange] = useState(false);
+  // Encounter: LENGKAPI diagnosis (staging) dari Condition terkirim. Mode range
+  // saat di-arm — false = SEMUA, true = rentang tanggal terpilih.
+  const [diagReconRunning, setDiagReconRunning] = useState(false);
+  const [diagReconArmed, setDiagReconArmed] = useState(false);
+  const [diagReconRange, setDiagReconRange] = useState(false);
+  const [diagReconResult, setDiagReconResult] = useState<number | null>(null);
+  const [diagReconError, setDiagReconError] = useState<string | null>(null);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -725,7 +732,8 @@ export default function ModuleSyncPanel({
     reconRunning ||
     specReconRunning ||
     trigRunning ||
-    dateReconRunning;
+    dateReconRunning ||
+    diagReconRunning;
 
   // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only). Runner generik
   // (POST ke /api/ihs/<module>/reconcile). `body` = payload tambahan (mis.
@@ -1862,6 +1870,40 @@ export default function ModuleSyncPanel({
     }
   }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
 
+  // Encounter: LENGKAPI encounter.diagnosis (staging) dari Condition terkirim
+  // (Rule 10457). action:"diagnosis"; bila useRange → scope ke rentang tanggal
+  // aktif, selain itu batch penuh. UPDATE-only (tak menyentuh send/status).
+  const diagReconRun = useCallback(
+    async (useRange: boolean) => {
+      if (busy) return;
+      setDiagReconArmed(false);
+      setDiagReconRunning(true);
+      setDiagReconResult(null);
+      setDiagReconError(null);
+      try {
+        const res = await fetch(`/api/ihs/${module}/reconcile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "diagnosis",
+            ...(useRange && dateFrom ? { from: dateFrom } : {}),
+            ...(useRange && dateTo ? { to: dateTo } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) setDiagReconError(json?.error ?? "Gagal melengkapi diagnosis");
+        else setDiagReconResult(Number(json?.updated ?? 0));
+      } catch {
+        setDiagReconError("Gagal menghubungi server");
+      } finally {
+        setDiagReconRunning(false);
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+      }
+    },
+    [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
+
   // Runner tombol PEMICU HILIR KEDUA (triggerCfg) — sejajar specReconRun, state
   // terpisah, selalu mengirim body { action: "trigger" }.
   const trigRun = useCallback(
@@ -2193,6 +2235,92 @@ export default function ModuleSyncPanel({
                   {enableEncounterFinished && dateReconError && (
                     <span className="text-[11px] font-medium text-red-500">
                       {dateReconError}
+                    </span>
+                  )}
+
+                  {/* Encounter: LENGKAPI diagnosis (Rule 10457) dari Condition
+                      terkirim untuk encounter yg diagnosis-nya NULL. UPDATE-only,
+                      tak menyentuh send/status. */}
+                  {enableEncounterFinished &&
+                    (diagReconRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Melengkapi diagnosis…
+                      </span>
+                    ) : diagReconArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1 ring-1 ring-indigo-200">
+                        <span className="pl-1 text-[11px] font-semibold text-indigo-800">
+                          {diagReconRange
+                            ? "Lengkapi diagnosis HANYA rentang tanggal terpilih?"
+                            : "Lengkapi diagnosis SEMUA encounter yg kosong?"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => diagReconRun(diagReconRange)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-indigo-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, lengkapi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDiagReconArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDiagReconResult(null);
+                            setDiagReconError(null);
+                            setDiagReconRange(false);
+                            setDiagReconArmed(true);
+                          }}
+                          disabled={loading || busy}
+                          title="Isi kolom diagnosis (staging) dari Condition yang SUDAH terkirim, untuk encounter yang diagnosis-nya kosong. Mencegah Satu Sehat menolak Encounter selesai (Rule 10457). UPDATE-only, tak menyentuh status/send. Idempotent."
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Lengkapi Diagnosis
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDiagReconResult(null);
+                            setDiagReconError(null);
+                            setDiagReconRange(true);
+                            setDiagReconArmed(true);
+                          }}
+                          disabled={loading || busy || (!dateFrom && !dateTo)}
+                          title={
+                            !dateFrom && !dateTo
+                              ? "Pilih rentang tanggal dulu (di atas) untuk melengkapi diagnosis hanya di rentang itu."
+                              : "Lengkapi diagnosis HANYA encounter dalam rentang tanggal terpilih."
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          (rentang)
+                        </button>
+                      </div>
+                    ))}
+
+                  {enableEncounterFinished &&
+                    diagReconResult != null &&
+                    !diagReconRunning && (
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {diagReconResult > 0
+                          ? `${fmt(diagReconResult)} diagnosis dilengkapi`
+                          : "Tidak ada yang perlu dilengkapi"}
+                      </span>
+                    )}
+                  {enableEncounterFinished && diagReconError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {diagReconError}
                     </span>
                   )}
 

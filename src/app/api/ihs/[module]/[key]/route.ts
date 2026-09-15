@@ -9,6 +9,7 @@ import { getModuleSpec } from "@/app/lib/ihs/registry";
 import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
+import { resolveEncounterDiagnosis } from "@/app/lib/ihs/encounter-diagnosis";
 import {
   resolveEncounterSubject,
   resolvePatientRefByNopen,
@@ -125,6 +126,23 @@ export async function GET(
         if (participant) {
           payload.participant = participant;
           enriched.push("participant");
+        }
+      }
+
+      // diagnosis: Satu Sehat Rule 10457 mewajibkan Encounter (selesai) punya
+      // `diagnosis`. Kolom staging kerap NULL karena hanya dibangun trigger saat
+      // encounter.send 0→1 (yg tak pernah dipicu app). Bila kosong & ada Condition
+      // TERKIRIM untuk NOPEN ini, bangun read-side dari Condition (SELECT identik
+      // trigger) → PUT/POST lolos. key Encounter = refId = NOPEN. Tak menimpa bila
+      // sudah ada. Untuk konsistensi permanen di staging, jalankan writeback
+      // "Lengkapi Diagnosis" (simgosReconcileEncounterDiagnosis).
+      const diag = payload.diagnosis;
+      const hasDiag = Array.isArray(diag) && diag.length > 0;
+      if (!hasDiag) {
+        const diagnosis = await resolveEncounterDiagnosis(key);
+        if (diagnosis) {
+          payload.diagnosis = diagnosis;
+          enriched.push("diagnosis");
         }
       }
 

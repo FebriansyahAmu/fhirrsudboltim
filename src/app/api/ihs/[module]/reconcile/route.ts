@@ -21,6 +21,7 @@ import {
 import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeback";
 import {
   reconcileEncounterFinished,
+  reconcileEncounterDiagnosis,
   listEncounterDurationAnomalies,
 } from "@/app/lib/dal/encounter-writeback";
 import {
@@ -178,6 +179,23 @@ export async function POST(
         return NextResponse.json({ anomalies, count: anomalies.length });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Gagal memuat anomali";
+        return NextResponse.json({ error: msg }, { status: 502 });
+      }
+    }
+    // action="diagnosis" → LENGKAPI encounter.diagnosis (staging) dari Condition
+    // terkirim untuk encounter yg diagnosis-nya NULL (Rule 10457). UPDATE-only,
+    // tak menyentuh send → tak mengklobber status. Scope penuh atau by from/to.
+    if (action === "diagnosis") {
+      try {
+        const updated = await reconcileEncounterDiagnosis({ limit, from, to });
+        return NextResponse.json({
+          updated,
+          pilot: limit != null,
+          scoped: from != null || to != null,
+          done: true,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Gagal melengkapi diagnosis";
         return NextResponse.json({ error: msg }, { status: 502 });
       }
     }
