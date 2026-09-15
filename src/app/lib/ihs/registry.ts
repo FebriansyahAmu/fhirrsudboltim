@@ -15,7 +15,8 @@ export type SyncCellType =
   | "nik"
   | "date"
   | "datetime"
-  | "code";
+  | "code"
+  | "status";
 
 /** Satu ketergantungan referensi (resource lain yang harus terkirim dulu). */
 export interface DependsRef {
@@ -208,7 +209,7 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     columns: [
       // Skalar ringan diekstrak server-side dari kolom JSON (bukan blob penuh).
       { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
-      { col: "status", label: "Status", type: "code" },
+      { col: "status", label: "Status", type: "status" },
       { col: "class", label: "Kelas", type: "code", jsonPath: "$.code" },
       { col: "period", label: "Mulai", type: "datetime", jsonPath: "$.start" },
       { col: "sendDate", label: "Diproses", type: "date" },

@@ -12,7 +12,12 @@
 //     dari panel SIMGOS.
 // ─────────────────────────────────────────────────────────────
 
-import { simgosExecute } from "@/app/lib/db/simgos";
+import {
+  simgosExecute,
+  simgosQuery,
+  simgosReconcileEncounterFinished,
+  ENCOUNTER_SANE_MAX_HOURS_SQL,
+} from "@/app/lib/db/simgos";
 import { upsertNote, resolveKuningNote, NOTE_MAX } from "@/app/lib/ihs/notes.dal";
 
 const REFID_RE = /^\d{10}$/;
@@ -67,6 +72,100 @@ export async function updateEncounterIhsId(
     "UPDATE `kemkes-ihs`.`encounter` SET `id` = ? WHERE `refId` = ? AND (`id` IS NULL OR `id` = '')",
     [ihsId, refId],
   );
+}
+
+/**
+ * RECONCILE massal: setel `status`='finished' (+ period.end) pada encounter yang
+ * benar-benar selesai — validasi dari kunjungan INTI (REF NULL: KELUAR terisi &
+ * STATUS=2) + ada diagnosa (medicalrecord.diagnosa). Mem-BYPASS syarat final
+ * tagihan (pendaftaran.STATUS=2) yang membuat sumber SIMGOS mandek 'in-progress'.
+ * Hanya menulis staging SIMGOS (tanpa Satu Sehat); idempotent. `limit` → UJI N
+ * baris terbaru dulu. Return jumlah encounter ter-update.
+ */
+/** YYYY-MM-DD → prefix YYMMDD (6 char); null bila format salah. */
+function toYymmdd6(d: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  return m ? m[1].slice(2) + m[2] + m[3] : null;
+}
+
+export async function reconcileEncounterFinished(
+  opts: { limit?: number; from?: string; to?: string } = {},
+): Promise<number> {
+  const { limit, from, to } = opts;
+  // Encounter.refId = YYMMDDNNNN (keyLength 10 → pad 4). from→…0000, to→…9999,
+  // meniru keyDateConds agar rentang tanggal sama persis dgn filter tabel.
+  let refIdFrom: string | undefined;
+  let refIdTo: string | undefined;
+  if (from) {
+    const p = toYymmdd6(from);
+    if (p) refIdFrom = p + "0000";
+  }
+  if (to) {
+    const p = toYymmdd6(to);
+    if (p) refIdTo = p + "9999";
+  }
+  return simgosReconcileEncounterFinished({ limit, refIdFrom, refIdTo });
+}
+
+export interface EncounterDurationAnomaly {
+  refId: string;
+  kelas: string | null;
+  sent: boolean;
+  masuk: string | null;
+  keluar: string | null;
+  hari: number | null;
+}
+
+/**
+ * Daftar encounter yang SEHARUSNYA finished (kunjungan inti sudah KELUAR &
+ * STATUS=2, ada diagnosa) TAPI durasi MASUK→KELUAR-nya TIDAK WAJAR — melewati
+ * ambang kelas ([[ENCOUNTER_SANE_MAX_HOURS_SQL]]) atau KELUAR < MASUK — sehingga
+ * DISISIHKAN dari reconcile untuk ditinjau operator. Read-only, di-cap `limit`
+ * (default 200, maks 1000); join terindeks (encounter PK + kunjungan.NOPEN).
+ */
+export async function listEncounterDurationAnomalies(
+  limit = 200,
+): Promise<EncounterDurationAnomaly[]> {
+  const cap =
+    Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 1000) : 200;
+  const rows = await simgosQuery<{
+    refId: string;
+    kelas: string | null;
+    sent: number;
+    masuk: Date | string | null;
+    keluar: Date | string | null;
+    hari: number | string | null;
+  }>(
+    "SELECT e.`refId` AS refId, " +
+      "  JSON_UNQUOTE(JSON_EXTRACT(e.`class`, '$.code')) AS kelas, " +
+      "  (e.`id` IS NOT NULL) AS sent, " +
+      "  k.`MASUK` AS masuk, k.`KELUAR` AS keluar, " +
+      "  ROUND(TIMESTAMPDIFF(HOUR, k.`MASUK`, k.`KELUAR`) / 24, 1) AS hari " +
+      "FROM `kemkes-ihs`.`encounter` e " +
+      "JOIN `pendaftaran`.`kunjungan` k " +
+      "  ON k.`NOPEN` = e.`refId` AND k.`REF` IS NULL " +
+      "WHERE e.`status` <> 'finished' " +
+      "  AND k.`KELUAR` IS NOT NULL AND k.`STATUS` = 2 " +
+      "  AND EXISTS (SELECT 1 FROM `medicalrecord`.`diagnosa` d " +
+      "    WHERE d.`NOPEN` = e.`refId`) " +
+      "  AND (k.`KELUAR` < k.`MASUK` " +
+      "    OR TIMESTAMPDIFF(HOUR, k.`MASUK`, k.`KELUAR`) > " +
+      ENCOUNTER_SANE_MAX_HOURS_SQL +
+      ") " +
+      "ORDER BY TIMESTAMPDIFF(HOUR, k.`MASUK`, k.`KELUAR`) DESC " +
+      "LIMIT ?",
+    [cap],
+  );
+  const iso = (v: Date | string | null): string | null =>
+    v == null ? null : v instanceof Date ? v.toISOString() : String(v);
+  return rows.map((r) => ({
+    refId: String(r.refId),
+    kelas: r.kelas ?? null,
+    sent: !!r.sent,
+    masuk: iso(r.masuk),
+    keluar: iso(r.keluar),
+    hari: r.hari == null ? null : Number(r.hari),
+  }));
 }
 
 /** Ringkas alasan gagal dari OperationOutcome / error response. */

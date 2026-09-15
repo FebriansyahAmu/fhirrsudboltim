@@ -60,6 +60,16 @@ interface Row {
   hint?: { name?: string; nik?: string };
 }
 
+/** Satu baris anomali durasi Encounter (kunjungan inti MASUK→KELUAR tak wajar). */
+interface EncounterAnomaly {
+  refId: string;
+  kelas: string | null;
+  sent: boolean;
+  masuk: string | null;
+  keluar: string | null;
+  hari: number | null;
+}
+
 interface NoteCounts {
   total: number;
   merah: number;
@@ -200,8 +210,69 @@ function QueueStatusBadge({ state }: { state: QueueState }) {
   );
 }
 
+// Badge status FHIR (mis. Encounter.status) dengan warna → mudah dibaca sekilas.
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  finished: {
+    label: "Selesai",
+    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  },
+  "in-progress": {
+    label: "Berlangsung",
+    cls: "bg-blue-50 text-blue-700 ring-blue-200",
+  },
+  arrived: { label: "Tiba", cls: "bg-amber-50 text-amber-700 ring-amber-200" },
+  triaged: { label: "Triase", cls: "bg-cyan-50 text-cyan-700 ring-cyan-200" },
+  planned: {
+    label: "Terjadwal",
+    cls: "bg-slate-100 text-slate-600 ring-slate-200",
+  },
+  onleave: { label: "Cuti", cls: "bg-violet-50 text-violet-700 ring-violet-200" },
+  cancelled: {
+    label: "Batal",
+    cls: "bg-slate-100 text-slate-500 ring-slate-200",
+  },
+  "entered-in-error": {
+    label: "Salah input",
+    cls: "bg-red-50 text-red-700 ring-red-200",
+  },
+  unknown: {
+    label: "Tak diketahui",
+    cls: "bg-slate-100 text-slate-500 ring-slate-200",
+  },
+};
+
+function StatusBadge({ value }: { value: string | null }) {
+  if (!value) return <span className="text-slate-300">—</span>;
+  const meta = STATUS_META[value];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+        meta?.cls ?? "bg-slate-100 text-slate-600 ring-slate-200"
+      }`}
+      title={value}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {meta?.label ?? value}
+    </span>
+  );
+}
+
 function fmt(n: number) {
   return n.toLocaleString("id-ID");
+}
+
+/** Format ISO → "07 Jun 2026, 12.22" (id-ID). Fallback ke string asli. */
+function fmtDateTimeShort(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function cellClass(type: string): string {
@@ -247,6 +318,9 @@ export default function ModuleSyncPanel({
   enableObservationTrigger = false,
   enableJenisMedication = false,
   enablePerformerDefault = false,
+  enableEncounterFinished = false,
+  enableEncounterRePut = false,
+  enablePutAutofill = false,
   resolveMode = null,
 }: {
   module: string;
@@ -262,6 +336,7 @@ export default function ModuleSyncPanel({
     resourceType: string,
     source?: { module: string; key: string },
     destale?: DestaleInfo,
+    opts?: { method?: "POST" | "PUT" },
   ) => void;
   /**
    * Aktifkan tombol "Kirim Antrian": POST berurutan semua baris HALAMAN ini
@@ -321,6 +396,27 @@ export default function ModuleSyncPanel({
    * order lab yang belum punya petugas. Read-side (payload) saja.
    */
   enablePerformerDefault?: boolean;
+  /**
+   * Encounter: tampilkan tombol "Sesuaikan Status Selesai" (reconcile) — setel
+   * status='finished' (+ period.end dari kunjungan.KELUAR) di staging untuk
+   * encounter yang BENAR-BENAR selesai (kunjungan inti sudah KELUAR & STATUS=2,
+   * dan ada diagnosa). Mem-bypass syarat final tagihan yang membuat sumber SIMGOS
+   * mandek 'in-progress'. DB-only, idempotent (UJI 1 dulu → batch penuh).
+   */
+  enableEncounterFinished?: boolean;
+  /**
+   * Encounter: tampilkan tombol re-PUT — kirim ulang (PUT) encounter yang SUDAH
+   * terkirim & kini berstatus 'finished' ke Satu Sehat agar status di sana ikut
+   * terkoreksi. Kontinu lintas halaman, sadar rate limit; hanya baris finished.
+   */
+  enableEncounterRePut?: boolean;
+  /**
+   * Tampilkan tombol kedua "Autofill (PUT)" di modal payload (di samping
+   * "Autofill ke form") untuk baris yang SUDAH terkirim — autofill ke form dalam
+   * mode PUT dengan `id` Satu Sehat baris itu disertakan ke body (mudah PUT ulang
+   * satu data). Halaman WAJIB menghormati `opts.method` pada `onUsePayload`.
+   */
+  enablePutAutofill?: boolean;
   /**
    * Mode RESOLUSI (mis. Practitioner): "kirim" bukan POST melainkan
    * GET `/api/fhir/<resourceType>?identifier=<identifierSystem>|<key>` — Satu
@@ -478,6 +574,19 @@ export default function ModuleSyncPanel({
   const [trigError, setTrigError] = useState<string | null>(null);
   const [trigPilotDone, setTrigPilotDone] = useState(false);
 
+  // Encounter: daftar anomali durasi (dimuat on-demand; toggle buka/tutup).
+  const [anomalies, setAnomalies] = useState<EncounterAnomaly[] | null>(null);
+  const [anomaliesLoading, setAnomaliesLoading] = useState(false);
+  const [anomaliesError, setAnomaliesError] = useState<string | null>(null);
+
+  // Encounter: reconcile TERBATAS rentang tanggal aktif (proses sedikit-sedikit).
+  const [dateReconRunning, setDateReconRunning] = useState(false);
+  const [dateReconArmed, setDateReconArmed] = useState(false);
+  const [dateReconResult, setDateReconResult] = useState<number | null>(null);
+  const [dateReconError, setDateReconError] = useState<string | null>(null);
+  // Encounter re-PUT: mode saat di-arm — false = SEMUA, true = rentang tanggal.
+  const [rePutRange, setRePutRange] = useState(false);
+
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
   const [noteKey, setNoteKey] = useState<string | null>(null);
@@ -615,7 +724,8 @@ export default function ModuleSyncPanel({
     rePutRunning ||
     reconRunning ||
     specReconRunning ||
-    trigRunning;
+    trigRunning ||
+    dateReconRunning;
 
   // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only). Runner generik
   // (POST ke /api/ihs/<module>/reconcile). `body` = payload tambahan (mis.
@@ -665,7 +775,18 @@ export default function ModuleSyncPanel({
               pilot: true,
               body: { action: "trigger" },
             }
-          : null;
+          : enableEncounterFinished
+            ? {
+                btn: "Sesuaikan Status Selesai",
+                confirm: "Uji 1 encounter dulu (tandai selesai)?",
+                confirmBtn: "Ya, uji 1 dulu",
+                title:
+                  "Untuk Encounter yang BENAR-BENAR selesai (kunjungan inti sudah KELUAR & STATUS=2, dan ada diagnosa) tapi masih 'in-progress' — karena sumber SIMGOS hanya punya flag Aktif/Batal, tak pernah 'finished': setel status='finished' + period.end (dari KELUAR) di staging. Mem-bypass syarat final tagihan. UJI 1 baris terbaru dulu, cek, lalu jalankan semua sisanya. Retroaktif, tanpa Satu Sehat; idempotent. POST berikutnya otomatis kirim 'finished'; yang sudah terkirim pakai tombol re-PUT.",
+                noun: "encounter ditandai selesai",
+                emptyMsg: "Tidak ada yang perlu disesuaikan",
+                pilot: true,
+              }
+            : null;
 
   // Tombol PEMICU HILIR KEDUA (khusus panel Specimen): flip specimen.send=0 →
   // bangun Observation. Terpisah dari "Sesuaikan Specimen" (ref-copy) di atas.
@@ -778,9 +899,31 @@ export default function ModuleSyncPanel({
         payloadData.resourceType,
         { module, key: payloadKey ?? "" },
         payloadData.destale,
+        { method: "POST" },
       );
       setPayloadKey(null);
     }
+  };
+
+  // Autofill mode PUT: sisipkan `id` Satu Sehat (dari baris terkirim) ke body,
+  // lalu minta halaman beralih ke method PUT. Untuk memperbarui satu data.
+  const handleAutofillPut = () => {
+    if (!payloadData || !onUsePayload) return;
+    const srcId =
+      data?.rows.find((r) => r.key === payloadKey)?.satuSehatId ?? null;
+    const base = payloadData.payload;
+    const withId =
+      srcId && base && typeof base === "object" && !Array.isArray(base)
+        ? { ...(base as Record<string, unknown>), id: srcId }
+        : base;
+    onUsePayload(
+      withId,
+      payloadData.resourceType,
+      { module, key: payloadKey ?? "" },
+      payloadData.destale,
+      { method: "PUT" },
+    );
+    setPayloadKey(null);
   };
 
   // ── Editor catatan ──
@@ -1470,6 +1613,255 @@ export default function ModuleSyncPanel({
     [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
   );
 
+  // ── Encounter re-PUT: kirim ulang (PUT) encounter terkirim yang kini
+  // 'finished' agar status di Satu Sehat ikut terkoreksi. Memakai ulang state
+  // rePut* (tak pernah tampil bersama re-PUT LAB yang bergerbang jenis=lab).
+  const rePutEncounter = useCallback(async (useRange = false) => {
+    if (rePutRunning || autoRunning || queueRunning) return;
+    rePutStopRef.current = false;
+    setRePutArmed(false);
+    setRePutRunning(true);
+    setRePutSummary(null);
+    setRePutStats({ ok: 0, fail: 0, skip: 0 });
+    setFilter("terkirim");
+    setNoteFilter("");
+    setPage(1);
+    // Rentang tanggal (opsional) → hanya PUT ulang encounter dalam jendela itu.
+    const rangeQs = useRange
+      ? (dateFrom ? `&from=${dateFrom}` : "") + (dateTo ? `&to=${dateTo}` : "")
+      : "";
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const countdown = async (
+      secs: number,
+      reason: "limit" | "batch",
+    ): Promise<boolean> => {
+      for (let s = secs; s > 0; s--) {
+        if (rePutStopRef.current) {
+          setAutoWait(null);
+          setAutoWaitReason(null);
+          return false;
+        }
+        setAutoWait(s);
+        setAutoWaitReason(reason);
+        await sleep(1000);
+      }
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      return true;
+    };
+    const backoff = async (res: Response): Promise<boolean> => {
+      const raw = Number(res.headers.get("Retry-After"));
+      let secs = Number.isFinite(raw) && raw > 0 ? Math.ceil(raw) : 60;
+      secs = Math.min(secs, 120) + 1;
+      return countdown(secs, "limit");
+    };
+
+    // PUT satu encounter terkirim; hanya bila payload staging kini 'finished'.
+    const putOne = async (
+      r: Row,
+    ): Promise<"ok" | "fail" | "skip" | "stopped"> => {
+      if (!r.satuSehatId) return "skip";
+      for (;;) {
+        if (rePutStopRef.current) return "stopped";
+        let pres: Response;
+        try {
+          pres = await fetch(`/api/ihs/${module}/${encodeURIComponent(r.key)}`, {
+            credentials: "same-origin",
+          });
+        } catch {
+          return "fail";
+        }
+        if (pres.status === 429) {
+          if (!(await backoff(pres))) return "stopped";
+          continue;
+        }
+        let pjson: {
+          resourceType?: string;
+          payload?: Record<string, unknown>;
+        };
+        try {
+          pjson = await pres.json();
+        } catch {
+          return "fail";
+        }
+        if (!pres.ok || !pjson.resourceType || !pjson.payload) return "fail";
+        // Hanya kirim ulang yang benar-benar sudah 'finished' (hasil reconcile).
+        if (pjson.payload.status !== "finished") return "skip";
+        const body = { ...pjson.payload, id: r.satuSehatId };
+        let sres: Response;
+        try {
+          sres = await fetch(
+            `/api/fhir/${encodeURIComponent(pjson.resourceType)}/${encodeURIComponent(r.satuSehatId)}?module=${encodeURIComponent(module)}&key=${encodeURIComponent(r.key)}`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              credentials: "same-origin",
+              body: JSON.stringify(body),
+            },
+          );
+        } catch {
+          return "fail";
+        }
+        if (sres.status === 429) {
+          if (!(await backoff(sres))) return "stopped";
+          continue;
+        }
+        await sres.text().catch(() => null);
+        return sres.ok ? "ok" : "fail";
+      }
+    };
+
+    let ok = 0,
+      fail = 0,
+      skip = 0,
+      processed = 0,
+      p = 1,
+      totalPages = 1,
+      guard = 0;
+    const MAX_LOOPS = 20000;
+    const BATCH_PAUSE_EVERY = 100;
+    const BATCH_PAUSE_SECS = 60;
+    const seen = new Set<string>();
+
+    try {
+      while (!rePutStopRef.current && p <= totalPages && guard++ < MAX_LOOPS) {
+        let resp: SyncResponse;
+        try {
+          const res = await fetch(
+            `/api/ihs/${module}?filter=terkirim&page=${p}${rangeQs}`,
+            { credentials: "same-origin" },
+          );
+          if (res.status === 429) {
+            if (!(await backoff(res))) break;
+            continue;
+          }
+          const json = await res.json();
+          if (!res.ok) break;
+          resp = json as SyncResponse;
+        } catch {
+          break;
+        }
+        totalPages = resp.totalPages;
+        setData(resp);
+        setNotesMap(resp.notes ?? {});
+        // Baris terkirim yang kolom Status-nya 'finished' & belum diproses.
+        const rows = resp.rows.filter(
+          (r) =>
+            r.sent &&
+            r.satuSehatId &&
+            !seen.has(r.key) &&
+            r.cells.find((c) => c.type === "status")?.value === "finished",
+        );
+        setQueueResults(
+          Object.fromEntries(rows.map((r) => [r.key, "pending" as QueueState])),
+        );
+        for (const r of rows) {
+          if (rePutStopRef.current) break;
+          seen.add(r.key);
+          setQueueResults((s) => ({ ...s, [r.key]: "sending" }));
+          const outcome = await putOne(r);
+          if (outcome === "stopped") break;
+          if (outcome === "ok") {
+            ok++;
+            setQueueResults((s) => ({ ...s, [r.key]: "ok" }));
+          } else if (outcome === "skip") {
+            skip++;
+            setQueueResults((s) => {
+              const n = { ...s };
+              delete n[r.key];
+              return n;
+            });
+          } else {
+            fail++;
+            setQueueResults((s) => ({ ...s, [r.key]: "fail" }));
+          }
+          setRePutStats({ ok, fail, skip });
+          processed++;
+          if (processed % BATCH_PAUSE_EVERY === 0) {
+            if (!(await countdown(BATCH_PAUSE_SECS, "batch"))) break;
+          } else {
+            await sleep(120);
+          }
+        }
+        p++;
+      }
+    } finally {
+      setRePutRunning(false);
+      setAutoWait(null);
+      setAutoWaitReason(null);
+      setQueueResults({});
+      setRePutSummary({ ok, fail, skip });
+      setPage(1);
+      await load(
+        "terkirim",
+        1,
+        "",
+        useRange ? dateFrom : null,
+        useRange ? dateTo : null,
+        "",
+      );
+    }
+  }, [rePutRunning, autoRunning, queueRunning, module, load, dateFrom, dateTo]);
+
+  // Encounter: muat daftar anomali durasi (on-demand). Klik lagi = tutup.
+  const loadAnomalies = useCallback(async () => {
+    if (anomaliesLoading) return;
+    if (anomalies) {
+      setAnomalies(null);
+      return;
+    }
+    setAnomaliesLoading(true);
+    setAnomaliesError(null);
+    try {
+      const res = await fetch(`/api/ihs/${module}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ action: "anomalies" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? "Gagal memuat anomali");
+      setAnomalies((json.anomalies ?? []) as EncounterAnomaly[]);
+    } catch (e) {
+      setAnomaliesError(e instanceof Error ? e.message : "Gagal memuat anomali");
+    } finally {
+      setAnomaliesLoading(false);
+    }
+  }, [module, anomalies, anomaliesLoading]);
+
+  // Encounter: reconcile 'finished' HANYA untuk rentang tanggal aktif (from/to).
+  // Validasi sama (kunjungan tutup + diagnosa + durasi wajar); di-scope via refId.
+  const dateReconRun = useCallback(async () => {
+    if (busy) return;
+    setDateReconArmed(false);
+    setDateReconRunning(true);
+    setDateReconResult(null);
+    setDateReconError(null);
+    try {
+      const res = await fetch(`/api/ihs/${module}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          ...(dateFrom ? { from: dateFrom } : {}),
+          ...(dateTo ? { to: dateTo } : {}),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) setDateReconError(json?.error ?? "Gagal menyesuaikan");
+      else setDateReconResult(Number(json?.updated ?? 0));
+    } catch {
+      setDateReconError("Gagal menghubungi server");
+    } finally {
+      setDateReconRunning(false);
+      await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+    }
+  }, [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery]);
+
   // Runner tombol PEMICU HILIR KEDUA (triggerCfg) — sejajar specReconRun, state
   // terpisah, selalu mengirim body { action: "trigger" }.
   const trigRun = useCallback(
@@ -1737,6 +2129,278 @@ export default function ModuleSyncPanel({
                     <span className="text-[11px] font-medium text-red-500">
                       {specReconError}
                     </span>
+                  )}
+
+                  {/* Encounter: reconcile TERBATAS rentang tanggal terpilih —
+                      proses sedikit-sedikit (tabel juga hanya tampil rentang itu). */}
+                  {enableEncounterFinished &&
+                    (dateReconRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Menyesuaikan rentang…
+                      </span>
+                    ) : dateReconArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-teal-50 px-2 py-1 ring-1 ring-teal-200">
+                        <span className="pl-1 text-[11px] font-semibold text-teal-800">
+                          Tandai selesai HANYA rentang tanggal terpilih?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={dateReconRun}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-teal-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, sesuaikan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDateReconArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDateReconResult(null);
+                          setDateReconError(null);
+                          setDateReconArmed(true);
+                        }}
+                        disabled={loading || busy || (!dateFrom && !dateTo)}
+                        title={
+                          !dateFrom && !dateTo
+                            ? "Pilih rentang tanggal dulu (di atas). Tombol ini hanya menandai 'finished' encounter DALAM rentang itu — untuk memproses sedikit-sedikit."
+                            : "Tandai 'finished' HANYA encounter dalam rentang tanggal terpilih (validasi sama: kunjungan tutup + diagnosa + durasi wajar). Idempotent."
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition-colors hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <LuDatabase className="h-3.5 w-3.5" />
+                        Sesuaikan Rentang Ini
+                      </button>
+                    ))}
+
+                  {enableEncounterFinished &&
+                    dateReconResult != null &&
+                    !dateReconRunning && (
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {dateReconResult > 0
+                          ? `${fmt(dateReconResult)} ditandai selesai (rentang ini)`
+                          : "Tidak ada yang cocok di rentang ini"}
+                      </span>
+                    )}
+                  {enableEncounterFinished && dateReconError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {dateReconError}
+                    </span>
+                  )}
+
+                  {/* Encounter: PUT ulang yang SUDAH terkirim & kini 'finished'
+                      → status di Satu Sehat ikut terkoreksi. */}
+                  {enableEncounterRePut &&
+                    (rePutRunning ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-700">
+                          {autoWait != null ? (
+                            <>
+                              <LuClock className="h-3.5 w-3.5" />
+                              {autoWaitReason === "batch"
+                                ? `Jeda ${autoWait}s`
+                                : `Tunggu limit ${autoWait}s`}
+                            </>
+                          ) : (
+                            <>
+                              <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              rePUT {fmt(rePutStats.ok)}✓
+                              {rePutStats.fail > 0 && ` · ${fmt(rePutStats.fail)}✗`}
+                              {rePutStats.skip > 0 &&
+                                ` · ${fmt(rePutStats.skip)} lewat`}
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={stopRePut}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                        >
+                          <LuX className="h-3.5 w-3.5" />
+                          Stop
+                        </button>
+                      </div>
+                    ) : rePutArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-50 px-2 py-1 ring-1 ring-fuchsia-200">
+                        <span className="pl-1 text-[11px] font-semibold text-fuchsia-800">
+                          {rePutRange
+                            ? "PUT ulang encounter 'finished' dalam rentang tanggal terpilih?"
+                            : "PUT ulang SEMUA encounter terkirim yang 'finished'?"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => rePutEncounter(rePutRange)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-fuchsia-700"
+                        >
+                          <LuWrench className="h-3.5 w-3.5" />
+                          Ya, kirim ulang
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRePutArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRePutRange(false);
+                            setRePutArmed(true);
+                          }}
+                          disabled={loading || busy}
+                          title="PUT ulang SEMUA encounter yang sudah terkirim & kini berstatus 'finished' (setelah 'Sesuaikan Status Selesai') agar status di Satu Sehat terkoreksi. Kontinu lintas halaman, sadar rate limit; yang belum finished dilewati. Idempotent."
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-700 transition-colors hover:bg-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuWrench className="h-3.5 w-3.5" />
+                          Perbaiki Terkirim (rePUT)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRePutRange(true);
+                            setRePutArmed(true);
+                          }}
+                          disabled={loading || busy || (!dateFrom && !dateTo)}
+                          title={
+                            !dateFrom && !dateTo
+                              ? "Pilih rentang tanggal dulu (di atas). Tombol ini hanya PUT ulang encounter 'finished' DALAM rentang itu."
+                              : "PUT ulang encounter terkirim yang 'finished' HANYA dalam rentang tanggal terpilih. Sadar rate limit; idempotent."
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-xs font-semibold text-fuchsia-700 transition-colors hover:bg-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuWrench className="h-3.5 w-3.5" />
+                          Perbaiki Terkirim (rentang)
+                        </button>
+                      </>
+                    ))}
+
+                  {enableEncounterRePut && rePutSummary && !rePutRunning && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      Selesai: {fmt(rePutSummary.ok)} di-PUT ulang
+                      {rePutSummary.skip > 0 &&
+                        `, ${fmt(rePutSummary.skip)} dilewati`}
+                      {rePutSummary.fail > 0 && `, ${fmt(rePutSummary.fail)} gagal`}
+                    </span>
+                  )}
+
+                  {/* Encounter: daftar durasi TIDAK WAJAR (disisihkan reconcile). */}
+                  {enableEncounterFinished && (
+                    <button
+                      type="button"
+                      onClick={loadAnomalies}
+                      disabled={anomaliesLoading}
+                      title="Tampilkan encounter yang seharusnya selesai (kunjungan inti sudah keluar + ada diagnosa) TAPI durasinya tidak wajar (IMP >8 hari, EMER/AMB >2 hari, atau keluar < masuk). Data ini SENGAJA tidak dinaikkan ke 'finished' — tinjau/perbaiki tanggal MASUK/KELUAR-nya."
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {anomaliesLoading ? (
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <LuTriangleAlert className="h-3.5 w-3.5" />
+                      )}
+                      Durasi Tidak Wajar
+                      {anomalies ? ` (${fmt(anomalies.length)})` : ""}
+                    </button>
+                  )}
+
+                  {enableEncounterFinished && anomaliesError && (
+                    <span className="text-[11px] font-medium text-red-500">
+                      {anomaliesError}
+                    </span>
+                  )}
+
+                  {enableEncounterFinished && anomalies && (
+                    <div className="w-full">
+                      {anomalies.length === 0 ? (
+                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs font-medium text-emerald-700">
+                          Tidak ada anomali durasi — semua kunjungan yang selesai
+                          berdurasi wajar.
+                        </div>
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/40">
+                          <div className="flex items-center justify-between border-b border-amber-200 px-3 py-2">
+                            <span className="text-xs font-bold text-amber-800">
+                              {fmt(anomalies.length)} encounter durasi tidak wajar —
+                              tinjau tanggal MASUK / KELUAR
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setAnomalies(null)}
+                              className="rounded p-0.5 text-amber-500 transition-colors hover:bg-amber-100"
+                            >
+                              <LuX className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="max-h-72 overflow-y-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead className="sticky top-0 bg-amber-100/80 text-[10px] uppercase tracking-wider text-amber-700">
+                                <tr>
+                                  <th className="px-3 py-1.5 font-bold">
+                                    No. Pendaftaran
+                                  </th>
+                                  <th className="px-3 py-1.5 font-bold">Kelas</th>
+                                  <th className="px-3 py-1.5 font-bold">Durasi</th>
+                                  <th className="px-3 py-1.5 font-bold">Masuk</th>
+                                  <th className="px-3 py-1.5 font-bold">Keluar</th>
+                                  <th className="px-3 py-1.5 font-bold">Kirim</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-amber-100">
+                                {anomalies.map((a) => (
+                                  <tr key={a.refId} className="hover:bg-amber-50">
+                                    <td className="px-3 py-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => openPayload(a.refId)}
+                                        className="font-mono text-xs font-semibold text-amber-800 underline-offset-2 hover:underline"
+                                      >
+                                        {a.refId}
+                                      </button>
+                                    </td>
+                                    <td className="px-3 py-1.5 font-mono text-slate-500">
+                                      {a.kelas ?? "—"}
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700">
+                                        {a.hari == null ? "—" : `${a.hari} hari`}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-slate-500">
+                                      {fmtDateTimeShort(a.masuk)}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-slate-500">
+                                      {fmtDateTimeShort(a.keluar)}
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                      {a.sent ? (
+                                        <span className="text-[10px] font-bold text-emerald-600">
+                                          Terkirim
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400">
+                                          Belum
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Tombol PEMICU HILIR KEDUA (triggerCfg) — mis. "Bangun
@@ -2517,10 +3181,16 @@ export default function ModuleSyncPanel({
                           {r.cells.map((cell, i) => (
                             <td
                               key={i}
-                              className={`px-4 py-2.5 ${cellClass(cell.type)}`}
+                              className={`px-4 py-2.5 ${
+                                cell.type === "status" ? "" : cellClass(cell.type)
+                              }`}
                             >
-                              {cell.value ?? (
-                                <span className="text-slate-300">—</span>
+                              {cell.type === "status" ? (
+                                <StatusBadge value={cell.value} />
+                              ) : (
+                                cell.value ?? (
+                                  <span className="text-slate-300">—</span>
+                                )
                               )}
                             </td>
                           ))}
@@ -2831,6 +3501,20 @@ export default function ModuleSyncPanel({
                     Autofill ke form
                   </button>
                 )}
+                {enablePutAutofill &&
+                  onUsePayload &&
+                  data?.rows.find((r) => r.key === payloadKey)?.satuSehatId && (
+                    <button
+                      type="button"
+                      onClick={handleAutofillPut}
+                      disabled={!payloadData}
+                      title="Autofill ke form dalam mode PUT (perbarui) — id Satu Sehat baris ini disertakan ke body."
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-linear-to-r from-amber-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:from-amber-400 hover:to-orange-400 disabled:opacity-50"
+                    >
+                      <LuWandSparkles className="h-3.5 w-3.5" />
+                      Autofill (PUT)
+                    </button>
+                  )}
               </div>
             </div>
           </div>

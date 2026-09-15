@@ -462,7 +462,15 @@ function MutationForm({
       return;
     }
     setRawError(null);
-    onSubmit({ payload: parsed as EncounterPayload });
+    // PUT/PATCH perlu id di URL — ambil dari body (autofill PUT menyertakannya).
+    const rid =
+      needsId &&
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { id?: unknown }).id === "string"
+        ? (parsed as { id?: string }).id || undefined
+        : undefined;
+    onSubmit({ payload: parsed as EncounterPayload, resourceId: rid });
   };
 
   const syncRaw = () => {

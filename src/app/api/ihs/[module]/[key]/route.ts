@@ -127,6 +127,69 @@ export async function GET(
           enriched.push("participant");
         }
       }
+
+      // statusHistory: Satu Sehat Rule 10122 mewajibkan SETIAP entri punya period
+      // start DAN end. SIMGOS menyimpan status berjalan (mis. in-progress) dengan
+      // period TERBUKA (tanpa end). Setelah status dinaikkan ke 'finished', period
+      // terbuka itu HARUS ditutup = saat kunjungan berakhir (period.end / KELUAR),
+      // kalau tidak PUT/POST ditolak. Rantai kronologis: end tiap entri = start
+      // entri berikutnya; entri terakhir = period.end Encounter. start yang kosong
+      // = end entri sebelumnya (entri pertama = period.start). Read-side, non-
+      // destruktif — HANYA mengisi yang kosong, tak pernah menimpa. Hanya untuk
+      // status 'finished' (encounter berjalan sah punya period terakhir terbuka).
+      if (payload.status === "finished" && Array.isArray(payload.statusHistory)) {
+        const hist = payload.statusHistory as Array<Record<string, unknown>>;
+        const encPeriod =
+          payload.period && typeof payload.period === "object"
+            ? (payload.period as Record<string, unknown>)
+            : null;
+        const asStr = (v: unknown): string | null =>
+          typeof v === "string" && v.trim() !== "" ? v : null;
+        const encStart = asStr(encPeriod?.start);
+        const encEnd = asStr(encPeriod?.end);
+        let touched = false;
+        for (let i = 0; i < hist.length; i++) {
+          const entry = hist[i];
+          if (!entry || typeof entry !== "object") continue;
+          let period =
+            entry.period && typeof entry.period === "object"
+              ? (entry.period as Record<string, unknown>)
+              : null;
+          if (!period) {
+            period = {};
+            entry.period = period;
+          }
+          // start kosong → end entri sebelumnya (yg mungkin baru terisi di iterasi
+          // ini), atau start Encounter untuk entri pertama.
+          if (!asStr(period.start)) {
+            const prev = i > 0 ? hist[i - 1] : null;
+            const prevPeriod =
+              prev && typeof prev === "object" && typeof prev.period === "object"
+                ? (prev.period as Record<string, unknown>)
+                : null;
+            const fill = asStr(prevPeriod?.end) ?? encStart;
+            if (fill) {
+              period.start = fill;
+              touched = true;
+            }
+          }
+          // end kosong → start entri berikutnya, atau end Encounter untuk entri
+          // terakhir (kasus utama: in-progress terbuka → ditutup di KELUAR).
+          if (!asStr(period.end)) {
+            const next = i < hist.length - 1 ? hist[i + 1] : null;
+            const nextPeriod =
+              next && typeof next === "object" && typeof next.period === "object"
+                ? (next.period as Record<string, unknown>)
+                : null;
+            const fill = asStr(nextPeriod?.start) ?? encEnd;
+            if (fill) {
+              period.end = fill;
+              touched = true;
+            }
+          }
+        }
+        if (touched) enriched.push("statusHistory");
+      }
     }
 
     // Data klinis dependen-Encounter dgn referensi Encounter YATIM: resolusi

@@ -20,6 +20,10 @@ import {
 } from "@/app/lib/dal/servicerequest-writeback";
 import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeback";
 import {
+  reconcileEncounterFinished,
+  listEncounterDurationAnomalies,
+} from "@/app/lib/dal/encounter-writeback";
+import {
   reconcileMedicationRefs,
   reconcileMedicationSendFlags,
   reconcileMedicationDispenseAuth,
@@ -137,6 +141,58 @@ export async function POST(
     } catch (e) {
       const msg =
         e instanceof Error ? e.message : "Gagal reconcile ServiceRequest";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
+  // Encounter: "Sesuaikan status selesai" — setel status='finished' (+ period.end)
+  // pada encounter yang benar-benar selesai (kunjungan inti KELUAR & STATUS=2 +
+  // ada diagnosa), mem-bypass syarat final tagihan yang membuat sumber SIMGOS
+  // mandek 'in-progress'. `limit` (opsional) → UJI N baris terbaru dulu. DB-only.
+  if (module === "encounter") {
+    let limit: number | undefined;
+    let action: string | undefined;
+    let from: string | undefined;
+    let to: string | undefined;
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    try {
+      const body = (await request.json()) as {
+        limit?: unknown;
+        action?: unknown;
+        from?: unknown;
+        to?: unknown;
+      };
+      if (typeof body?.action === "string") action = body.action;
+      const l = Number(body?.limit);
+      if (Number.isFinite(l) && l > 0) limit = Math.floor(l);
+      if (typeof body?.from === "string" && DATE_RE.test(body.from)) from = body.from;
+      if (typeof body?.to === "string" && DATE_RE.test(body.to)) to = body.to;
+    } catch {
+      // tanpa body → batch penuh.
+    }
+    // action="anomalies" → BACA daftar encounter selesai-berdiagnosa tapi durasi
+    // MASUK→KELUAR tidak wajar (disisihkan dari reconcile) untuk ditinjau.
+    if (action === "anomalies") {
+      try {
+        const anomalies = await listEncounterDurationAnomalies(limit);
+        return NextResponse.json({ anomalies, count: anomalies.length });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Gagal memuat anomali";
+        return NextResponse.json({ error: msg }, { status: 502 });
+      }
+    }
+    // Tanpa from/to → batch penuh; dengan → HANYA encounter dalam rentang tanggal
+    // (di-scope via refId YYMMDD, memproses sedikit-sedikit).
+    try {
+      const updated = await reconcileEncounterFinished({ limit, from, to });
+      return NextResponse.json({
+        updated,
+        pilot: limit != null,
+        scoped: from != null || to != null,
+        done: true,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Gagal reconcile Encounter";
       return NextResponse.json({ error: msg }, { status: 502 });
     }
   }

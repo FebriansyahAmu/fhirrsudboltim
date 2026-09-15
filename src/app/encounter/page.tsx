@@ -89,9 +89,16 @@ export default function EncounterPage() {
     resetResponse();
   };
 
-  // Autofill payload dari panel SIMGOS → mode POST + Raw JSON, lalu scroll ke form.
-  const handleUsePayload = (payload: unknown) => {
-    setActiveMethod("POST");
+  // Autofill payload dari panel SIMGOS → Raw JSON + method sesuai (POST default,
+  // atau PUT bila tombol "Autofill (PUT)" dipakai), lalu scroll ke form.
+  const handleUsePayload = (
+    payload: unknown,
+    _resourceType?: string,
+    _source?: { module: string; key: string },
+    _destale?: unknown,
+    opts?: { method?: "POST" | "PUT" },
+  ) => {
+    setActiveMethod(opts?.method ?? "POST");
     resetResponse();
     setAutofillRaw({ json: JSON.stringify(payload, null, 2), nonce: Date.now() });
     setTimeout(
@@ -160,6 +167,9 @@ export default function EncounterPage() {
           onUsePayload={handleUsePayload}
           enableQueue
           enableKeySearch
+          enableEncounterFinished
+          enableEncounterRePut
+          enablePutAutofill
           defaultOpen
         />
 

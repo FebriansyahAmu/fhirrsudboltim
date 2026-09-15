@@ -14,6 +14,10 @@
 //         (MENYALIN persis statement trigger `service_request_after_update`)
 //         untuk order lab TANPA petugas (performer null) yang tak pernah
 //         memicu trigger; trigger `specimen_before_insert` membangun sisanya.
+//      5. `simgosReconcileEncounterFinished` — UPDATE `encounter.status`→
+//         'finished' (+ period.end via `getPeriode`) utk encounter yang benar-
+//         benar selesai (kunjungan inti KELUAR & STATUS=2 + ada diagnosa);
+//         sumber SIMGOS cuma punya flag Aktif/Batal, tak pernah 'finished'.
 //    Selain fungsi-fungsi itu, INSERT / DELETE / DDL (DROP/ALTER/
 //    TRUNCATE/REPLACE, dll.) TETAP DITOLAK oleh `assertAllowedStatement`
 //    sebagai pertahanan berlapis, dan `multipleStatements:false`
@@ -254,6 +258,92 @@ export async function simgosReconcileMissingLabSpecimens(
             limit,
           ])
         : await conn.query(base, [IHS_UUID_REGEX]);
+    return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Ambang durasi kunjungan yang WAJAR per kelas, dalam JAM (ekspresi SQL;
+ * encounter di-alias `e`). Dipakai memvalidasi MASUK→KELUAR baris kunjungan inti
+ * sebelum menaikkan status → 'finished': rawat inap (IMP) ≤ 8 hari; gawat darurat
+ * (EMER) & rawat jalan (AMB) ≤ 2 hari. Melebihi ambang = TIDAK WAJAR (indikasi
+ * salah input tanggal) → TIDAK di-finished, disisihkan untuk ditinjau. Satu
+ * sumber-kebenaran: dipakai oleh UPDATE reconcile & kueri daftar anomali.
+ */
+export const ENCOUNTER_SANE_MAX_HOURS_SQL =
+  "24 * (CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(e.`class`, '$.code')) = 'IMP' " +
+  "THEN 8 ELSE 2 END)";
+
+/**
+ * Tulis TERSANKSI ke-5: setel `encounter.status` = 'finished' (+ `period`
+ * lengkap dgn end) untuk encounter yang BENAR-BENAR selesai — DAN durasi
+ * kunjungan intinya WAJAR (lihat ENCOUNTER_SANE_MAX_HOURS_SQL).
+ *
+ * Kenapa perlu: `encounter.status` diisi fungsi SIMGOS `getStatusPendaftaran`
+ * dari `pendaftaran.pendaftaran.STATUS`, yang HANYA flag Aktif(1)/Batal(0) —
+ * tak punya state "selesai" (butuh final tagihan → STATUS=2 yang nyaris tak
+ * pernah terjadi). Akibatnya ~99% encounter mandek `in-progress` walau pasien
+ * sudah pulang. Kita BYPASS syarat tagihan itu & validasi selesai dari sumber
+ * yang benar: baris kunjungan INTI (`REF IS NULL`) sudah `KELUAR` & `STATUS=2`,
+ * DAN ada diagnosa (`medicalrecord.diagnosa`) untuk NOPEN tsb.
+ *
+ * AMAN terhadap trigger: statement TIDAK menyentuh kolom `send`, sehingga
+ * gerbang `encounter_before_update` (`NEW.send=1 AND OLD.send!=NEW.send`) tak
+ * aktif → status TIDAK ditimpa balik `getStatusPendaftaran`. `after_update`
+ * hanya mem-`storeCoverage` (sudah jalan di tiap update, ber-handler sendiri)
+ * & blok cascade-nya bergerbang `id` yang tak kita ubah. `period` dibangun
+ * ulang oleh fungsi SIMGOS `getPeriode` agar format start/end IDENTIK dgn ETL.
+ *
+ * Statement DIKUNCI (konstanta) & idempotent (`status <> 'finished'`). `limit`
+ * (opsional) → mode UJI N baris TERBARU (ORDER BY refId DESC) sebelum batch
+ * penuh. Return jumlah baris ter-update.
+ */
+export async function simgosReconcileEncounterFinished(
+  opts: { limit?: number; refIdFrom?: string; refIdTo?: string } = {},
+): Promise<number> {
+  const { limit, refIdFrom, refIdTo } = opts;
+  // Batas rentang pada refId (= YYMMDDNNNN) — mem-scope reconcile ke jendela
+  // tanggal (mis. proses per-hari). Tetap bound param → statement terkunci.
+  const params: unknown[] = [];
+  let dateSql = "";
+  if (refIdFrom != null) {
+    if (!/^\d{10}$/.test(refIdFrom))
+      throw new Error("refIdFrom Encounter tidak valid");
+    dateSql += " AND e.`refId` >= ?";
+    params.push(refIdFrom);
+  }
+  if (refIdTo != null) {
+    if (!/^\d{10}$/.test(refIdTo))
+      throw new Error("refIdTo Encounter tidak valid");
+    dateSql += " AND e.`refId` <= ?";
+    params.push(refIdTo);
+  }
+  const base =
+    "UPDATE `kemkes-ihs`.`encounter` e " +
+    "SET e.`status` = 'finished', " +
+    "    e.`period` = COALESCE(`kemkes-ihs`.`getPeriode`(e.`refId`), e.`period`) " +
+    "WHERE e.`status` <> 'finished'" +
+    dateSql +
+    " AND EXISTS (SELECT 1 FROM `pendaftaran`.`kunjungan` k " +
+    "  WHERE k.`NOPEN` = e.`refId` AND k.`REF` IS NULL " +
+    "  AND k.`KELUAR` IS NOT NULL AND k.`STATUS` = 2 " +
+    "  AND k.`KELUAR` >= k.`MASUK` " +
+    "  AND TIMESTAMPDIFF(HOUR, k.`MASUK`, k.`KELUAR`) <= " +
+    ENCOUNTER_SANE_MAX_HOURS_SQL +
+    ") " +
+    "AND EXISTS (SELECT 1 FROM `medicalrecord`.`diagnosa` d " +
+    "  WHERE d.`NOPEN` = e.`refId`)";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    let sql = base;
+    if (limit && limit > 0) {
+      sql += " ORDER BY e.`refId` DESC LIMIT ?";
+      params.push(limit);
+    }
+    const res = await conn.query(sql, params);
     return Number((res as { affectedRows?: number }).affectedRows ?? 0);
   } finally {
     conn.release();
