@@ -8,7 +8,7 @@ ke SIMGOS agar rantai referensi antar-resource tetap konsisten.
 Dibangun dengan **Next.js 16 (App Router)**, **React 19**, **TypeScript**, **Tailwind v4**,
 dan **Prisma 7**.
 
-> **Versi:** `v2.0.0`
+> **Versi:** `v2.0.1`
 
 ---
 
@@ -16,7 +16,7 @@ dan **Prisma 7**.
 
 Aplikasi punya dua mode kerja yang saling melengkapi:
 
-1. **Mesin Sinkronisasi SIMGOS** *(inti v2.0.0)* — setiap resource punya panel yang:
+1. **Mesin Sinkronisasi SIMGOS** *(inti aplikasi)* — setiap resource punya panel yang:
    menarik daftar data dari SIMGOS, memfilter berdasarkan tanggal, mencari per-kunci,
    merakit payload FHIR otomatis, mengirim satu-per-satu (kirim antrian) atau otomatis
    (auto-kirim), lalu menulis balik `id`/`subject`/`encounter` ke SIMGOS.
@@ -191,26 +191,30 @@ src/
 
 ---
 
-## Setup
+## Menjalankan
+
+Dua jalur: **development lokal** (langsung di host, tanpa Docker) dan **deploy
+produksi via Docker**. Development sengaja tetap non-Docker agar iterasi cepat
+(hot-reload); produksi memakai Docker agar Python (pydicom), DCMTK, dan runtime
+Node terbundel rapi di image.
 
 ### Prasyarat
 
-- **Node.js** 18+
+**Development lokal:**
+
+- **Node.js** 20+
 - **MariaDB / MySQL** — DB aplikasi + akses (read-mostly) ke database SIMGOS
-- **Python 3** + `pydicom`, `pillow`, `numpy` (untuk konversi/verifikasi DICOM)
+- **Python 3** + `pydicom==2.4.x`, `pillow`, `numpy` (konversi/verifikasi DICOM)
 - **DCMTK** (`storescu` di PATH) — hanya untuk fitur DICOM Router
 
-### 1. Clone & install
+**Deploy produksi:**
 
-```bash
-git clone <repo-url>
-cd fhirrsudboltim
-npm install
-```
+- **Docker** + **Docker Compose** — hanya ini. Python, DCMTK, dan dependency lain
+  sudah dibundel di image (tak perlu memasang Node/Python/DCMTK di host).
 
-### 2. Konfigurasi environment
+### Konfigurasi environment (`.env`)
 
-Buat file `.env` di root proyek:
+Buat file `.env` di root proyek (dipakai kedua jalur):
 
 ```env
 # ── DB Aplikasi (Prisma) ──────────────────────────────────
@@ -246,37 +250,92 @@ DICOM_ROUTER_PORT="104"
 # POSTMAN_API_KEYS="key1,key2"
 ```
 
-> **Catatan:** variabel session bernama `SECRET` (bukan `JWT_SECRET`).
+> **Catatan penting:**
+> - Variabel session bernama `SECRET` (bukan `JWT_SECRET`).
+> - **Password DB (khusus Docker):** `DATABASE_PASSWORD` harus nilai **mentah /
+>   ter-decode** karena adapter Prisma memakainya apa adanya — mis.
+>   `S!MGos2@kemkes.go.id`, **bukan** `S%21MGos2%40kemkes.go.id`. Sebaliknya,
+>   `DATABASE_URL` & `DATABASE_URL_SIMGOS` tetap **URL-encoded** (kode meng-decode
+>   sendiri). Salah di sini = login gagal 500 (Access denied).
+> - `NEXT_PUBLIC_*` di-*inline* ke bundle browser **saat build**, jadi harus sudah
+>   terisi sebelum `docker compose build` (Compose melemparnya sebagai build args
+>   dari `.env`).
 
-### 3. Setup database aplikasi
+### A · Development lokal (tanpa Docker)
 
 ```bash
+git clone <repo-url>
+cd fhirrsudboltim
+npm install
+
+# DB aplikasi (SIMGOS tidak dikelola Prisma; cukup DATABASE_URL_SIMGOS valid)
 npx prisma generate
 npx prisma db push
+
+# Python untuk fitur DICOM (pin pydicom 2.4.x — 3.x menghapus write_like_original)
+pip install "pydicom==2.4.4" pillow numpy
+
+npm run dev        # → http://localhost:3000
 ```
 
-> DB SIMGOS **tidak** dikelola Prisma — cukup pastikan `DATABASE_URL_SIMGOS` valid & bisa
-> dibaca. Skema lokal untuk mapping lab: `prisma/seed-lab-loinc.mjs`.
-
-### 4. Install Python (fitur DICOM)
-
-```bash
-pip install pydicom pillow numpy
-```
-
-### 5. Jalankan
-
-```bash
-npm run dev        # development → http://localhost:3000
-npm run build && npm start   # production
-```
-
-### 6. Type check & lint
+Type check & lint:
 
 ```bash
 npx tsc --noEmit
 npm run lint
 ```
+
+> Mapping lab lokal: `prisma/seed-lab-loinc.mjs`.
+
+### B · Deploy produksi (Docker)
+
+Build & runtime dibungkus [`Dockerfile`](Dockerfile) (Next.js `output: standalone`,
+multi-stage) + [`docker-compose.yml`](docker-compose.yml). App ini dirancang sebagai
+**app kedua** di VPS — app pertama (antrian) di `127.0.0.1:3001`, app ini di
+`127.0.0.1:3002` (bind ke localhost, di depan pakai reverse proxy).
+
+```bash
+# 1. Pastikan .env sudah siap (lihat catatan Docker di atas)
+
+# 2. Build image + jalankan
+docker compose up -d --build
+
+# 3. Pantau
+docker compose logs -f          # log realtime
+docker compose ps               # status + health
+
+# 4. Update setelah git pull
+docker compose up -d --build    # rebuild + restart
+docker compose down             # hentikan
+```
+
+**Reverse proxy (nginx).** Container hanya melayani **HTTP** di `127.0.0.1:3002`;
+TLS/HTTPS diterminasi nginx di host. Contoh minimal:
+
+```nginx
+server {
+    listen 8443 ssl;
+    server_name _;
+    ssl_certificate     /etc/nginx/ssl/fhir.crt;
+    ssl_certificate_key /etc/nginx/ssl/fhir.key;
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> Akses lewat `https://<host>:8443` (nginx), **bukan** `https://<host>:3002` —
+> port 3002 HTTP-only & terikat localhost. `X-Forwarded-For` penting agar rate
+> limiter login membaca IP klien yang benar.
+
+**Catatan koneksi DB.** Database berada di **server terpisah** (IP sendiri, satu
+jaringan). Cukup isi IP di `.env` — container punya akses keluar default (tak perlu
+`extra_hosts`/`host.docker.internal`). Di sisi server DB, Docker mem-*masquerade*
+trafik container di belakang IP host VPS → **GRANT** user MySQL harus mengizinkan IP
+VPS (`user@'<ip-vps>'` atau `'%'`), bukan IP internal container (`172.x`).
 
 ---
 

@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# internal docs (analisis SIMGOS, gap analysis, dll — tidak dipublikasikan)
+/docs/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
