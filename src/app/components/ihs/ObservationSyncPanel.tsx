@@ -74,6 +74,7 @@ export default function ObservationSyncPanel({
         enableQueue
         enableLabRebuild={kind === "observation"}
         enableObservationTrigger={kind === "observation"}
+        enableTtvIssued={kind === "observation"}
         defaultOpen
       />
     </div>

@@ -10,6 +10,7 @@ import { getModulePayload } from "@/app/lib/ihs/module-sync";
 import { getPatientCreatePayload } from "@/app/lib/ihs/patient.source";
 import { resolveEncounterParticipant } from "@/app/lib/ihs/encounter-participant";
 import { resolveEncounterDiagnosis } from "@/app/lib/ihs/encounter-diagnosis";
+import { resolveTtvActual, isTtvJenis } from "@/app/lib/ihs/ttv-actual";
 import {
   resolveEncounterSubject,
   resolvePatientRefByNopen,
@@ -344,6 +345,69 @@ export async function GET(
           else delete payload.interpretation;
           enriched.push("code");
         }
+      }
+    }
+
+    // Observation TTV (tabel `observation`, jenis 1-5 = nadi/napas/sistolik/
+    // diastolik/suhu) — data AKTUAL dari sumbernya `medicalrecord.tanda_vital`
+    // (lihat lib/ihs/ttv-actual.ts):
+    //   • issued   → MAX(jam periksa, jam input) bila staging masih kosong.
+    //   • encounter → Encounter milik kunjungan tempat TTV DIUKUR (EMER/IMP/AMB),
+    //     bukan Encounter IGD asal hasil "lipatan" getEncounter(). Bila Encounter
+    //     milik sendiri belum terkirim, referensi yang salah DIBUANG (jangan kirim
+    //     TTV ranap ke Encounter IGD) → tandai "menunggu" agar dikirim setelah
+    //     Encounter-nya ada.
+    if (spec.module === "observation") {
+      const [refId, jenisStr] = key.split("_");
+      if (isTtvJenis(Number(jenisStr))) {
+        const payload = result.payload as Record<string, unknown>;
+        const ttv = await resolveTtvActual(refId);
+        if (ttv) {
+          if ((payload.issued == null || payload.issued === "") && ttv.issued) {
+            payload.issued = ttv.issued;
+            enriched.push("issued");
+          }
+          const cur = payload.encounter;
+          const curRef =
+            cur && typeof cur === "object" && !Array.isArray(cur)
+              ? (cur as Record<string, unknown>).reference
+              : undefined;
+          if (ttv.encounter) {
+            if (curRef !== ttv.encounter.reference) {
+              payload.encounter = ttv.encounter;
+              enriched.push("encounter");
+            }
+          } else if (ttv.ownNopen && typeof curRef === "string" && curRef) {
+            // Encounter kunjungan sendiri belum terkirim → ref yang ada pasti
+            // milik pendaftaran lain (lipatan) → jangan dikirim ke sana.
+            delete payload.encounter;
+            enriched.push("encounter:menunggu");
+          }
+        }
+      }
+    }
+
+    // Observation (SEMUA jenis): Satu Sehat kini mewajibkan `issued` (Rule 10296
+    // "Element not found: Observation.issued") — sebelumnya tidak, makanya
+    // Observation lama tanpa `issued` dulu diterima. Kolom staging `issued` ada
+    // di semua tabel keluarga observation, tapi ETL SIMGOS HANYA mengisinya untuk
+    // LAB (jenis=6, = effectiveDateTime); TTV (jenis 1-5) & observasi lain selalu
+    // NULL → dibuang perakit → ditolak. TTV sudah diisi nilai AKTUAL di blok atas;
+    // ini CADANGAN untuk observasi lain (& TTV yg sumbernya tak ketemu): isi dari
+    // `effectiveDateTime` — meniru konvensi ETL lab SIMGOS. Hanya bila belum ada &
+    // effectiveDateTime berformat instant FHIR (detik + zona waktu); tak menimpa.
+    if (spec.resourceType === "Observation") {
+      const payload = result.payload as Record<string, unknown>;
+      const eff = payload.effectiveDateTime;
+      const INSTANT_RE =
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+      if (
+        (payload.issued == null || payload.issued === "") &&
+        typeof eff === "string" &&
+        INSTANT_RE.test(eff)
+      ) {
+        payload.issued = eff;
+        enriched.push("issued");
       }
     }
 

@@ -19,6 +19,7 @@ import {
   reconcileMissingLabSpecimens,
 } from "@/app/lib/dal/servicerequest-writeback";
 import { reconcileObservationSendFlags } from "@/app/lib/dal/observation-writeback";
+import { reconcileTtvIssued } from "@/app/lib/dal/ttv-writeback";
 import {
   reconcileEncounterFinished,
   reconcileEncounterDiagnosis,
@@ -245,12 +246,17 @@ export async function POST(
   let batchSize = DEFAULT_BATCH;
   let action: string | undefined;
   let trigLimit: number | undefined;
+  let from: string | undefined;
+  let to: string | undefined;
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   try {
     const body = (await request.json()) as {
       cursor?: unknown;
       batchSize?: unknown;
       action?: unknown;
       limit?: unknown;
+      from?: unknown;
+      to?: unknown;
     };
     if (body && typeof body === "object") {
       if (typeof body.action === "string") action = body.action;
@@ -260,9 +266,33 @@ export async function POST(
       if (Number.isFinite(c) && c >= 0) cursor = Math.floor(c);
       const b = Number(body.batchSize);
       if (Number.isFinite(b) && b > 0) batchSize = Math.floor(b);
+      if (typeof body.from === "string" && DATE_RE.test(body.from)) from = body.from;
+      if (typeof body.to === "string" && DATE_RE.test(body.to)) to = body.to;
     }
   } catch {
     // tanpa body → pakai default (mulai dari awal).
+  }
+
+  // Observation TTV: action="ttv-issued" → WRITE-BACK `issued` aktual (MAX jam
+  // periksa, jam input) dari medicalrecord.tanda_vital ke staging untuk TTV
+  // (jenis 1-5) yang masih kosong. Per BATCH (`limit`, wajib) — client mengulang
+  // sampai `updated < limit`. ≤50 = pilot (baris terbaru). from/to → rentang.
+  if (action === "ttv-issued") {
+    if (!trigLimit) {
+      return NextResponse.json({ error: "limit wajib diisi" }, { status: 400 });
+    }
+    try {
+      const updated = await reconcileTtvIssued({ limit: trigLimit, from, to });
+      return NextResponse.json({
+        updated,
+        limit: Math.min(trigLimit, 5000),
+        scoped: from != null || to != null,
+        done: updated < Math.min(trigLimit, 5000),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Gagal menyesuaikan issued TTV";
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
   }
 
   // Observation: action="trigger" → PEMICU HILIR: flip `send=0` pada Observation

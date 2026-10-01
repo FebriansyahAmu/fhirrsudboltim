@@ -338,6 +338,7 @@ export default function ModuleSyncPanel({
   enableEncounterFinished = false,
   enableEncounterRePut = false,
   enablePutAutofill = false,
+  enableTtvIssued = false,
   resolveMode = null,
 }: {
   module: string;
@@ -400,6 +401,13 @@ export default function ModuleSyncPanel({
    * Retroaktif (uji 1 → semua sisanya), DB-only. Pengiriman baru memicunya otomatis.
    */
   enableObservationTrigger?: boolean;
+  /**
+   * Observation TTV (tab Umum/TTV): tampilkan tombol "Sesuaikan Issued TTV" —
+   * write-back `issued` AKTUAL (MAX jam periksa, jam input) dari
+   * medicalrecord.tanda_vital ke staging TTV (jenis 1-5) yang masih kosong.
+   * Uji 1 pemeriksaan dulu, lalu batch berulang sampai habis. DB-only.
+   */
+  enableTtvIssued?: boolean;
   /**
    * Aktifkan sub-filter Jenis (Resep / Penyerahan) untuk modul `medication`:
    * jenis=1 → MedicationRequest (resep), jenis=2 → MedicationDispense
@@ -616,6 +624,17 @@ export default function ModuleSyncPanel({
   const [revertRange, setRevertRange] = useState(false);
   const [revertResult, setRevertResult] = useState<number | null>(null);
   const [revertError, setRevertError] = useState<string | null>(null);
+  // Observation TTV: write-back `issued` aktual. Pilot (1 pemeriksaan = 5 baris)
+  // dulu → lalu "jalankan semua" (batch berulang). ttvRange = scope rentang.
+  const [ttvRunning, setTtvRunning] = useState(false);
+  const [ttvArmed, setTtvArmed] = useState(false);
+  const [ttvRange, setTtvRange] = useState(false);
+  const [ttvPilotDone, setTtvPilotDone] = useState(false);
+  const [ttvProgress, setTtvProgress] = useState(0);
+  const [ttvResult, setTtvResult] = useState<{ updated: number; pilot: boolean } | null>(
+    null,
+  );
+  const [ttvError, setTtvError] = useState<string | null>(null);
 
   // Anotasi (catatan + mark warna) per baris
   const [notesMap, setNotesMap] = useState<Record<string, RowNoteApi>>({});
@@ -757,7 +776,8 @@ export default function ModuleSyncPanel({
     trigRunning ||
     dateReconRunning ||
     diagReconRunning ||
-    revertRunning;
+    revertRunning ||
+    ttvRunning;
 
   // Konfigurasi tombol "Sesuaikan …" (retroaktif, DB-only). Runner generik
   // (POST ke /api/ihs/<module>/reconcile). `body` = payload tambahan (mis.
@@ -1962,6 +1982,61 @@ export default function ModuleSyncPanel({
     [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
   );
 
+  // Observation TTV: write-back `issued` aktual. mode "pilot" = 1 pemeriksaan
+  // (5 baris, terbaru); "all" = batch 2000 berulang sampai `updated < batch`.
+  // useRange → scope rentang tanggal aktif. 429 → tunggu lalu ulang batch.
+  const ttvRun = useCallback(
+    async (mode: "pilot" | "all", useRange: boolean) => {
+      if (busy) return;
+      const BATCH = 2000;
+      const limit = mode === "pilot" ? 5 : BATCH;
+      setTtvArmed(false);
+      setTtvRunning(true);
+      setTtvResult(null);
+      setTtvError(null);
+      setTtvProgress(0);
+      let total = 0;
+      try {
+        for (let i = 0, retries = 0; i < 200; i++) {
+          const res = await fetch(`/api/ihs/${module}/reconcile`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              action: "ttv-issued",
+              limit,
+              ...(useRange && dateFrom ? { from: dateFrom } : {}),
+              ...(useRange && dateTo ? { to: dateTo } : {}),
+            }),
+          });
+          if (res.status === 429 && retries < 5) {
+            retries++;
+            await new Promise((r) => setTimeout(r, 3000 * retries));
+            continue;
+          }
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setTtvError(json?.error ?? "Gagal menyesuaikan issued TTV");
+            break;
+          }
+          retries = 0;
+          const n = Number(json?.updated ?? 0);
+          total += n;
+          setTtvProgress(total);
+          if (mode === "pilot" || n < limit) break;
+        }
+        setTtvResult({ updated: total, pilot: mode === "pilot" });
+        if (mode === "pilot" && total > 0) setTtvPilotDone(true);
+      } catch {
+        setTtvError("Gagal menghubungi server");
+      } finally {
+        setTtvRunning(false);
+        await load(filter, page, noteFilter, dateFrom, dateTo, keyQuery);
+      }
+    },
+    [busy, module, load, filter, page, noteFilter, dateFrom, dateTo, keyQuery],
+  );
+
   // Runner tombol PEMICU HILIR KEDUA (triggerCfg) — sejajar specReconRun, state
   // terpisah, selalu mengirim body { action: "trigger" }.
   const trigRun = useCallback(
@@ -2232,6 +2307,103 @@ export default function ModuleSyncPanel({
                     <span className="text-[11px] font-medium text-red-500">
                       {specReconError}
                     </span>
+                  )}
+
+                  {/* Observation TTV: write-back `issued` AKTUAL dari
+                      medicalrecord.tanda_vital (MAX jam periksa, jam input) ke
+                      staging TTV jenis 1-5 yg masih kosong. Pilot → semua. */}
+                  {enableTtvIssued && <ToolGroupLabel label="TTV (Tanda Vital)" />}
+                  {enableTtvIssued &&
+                    (ttvRunning ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
+                        <LuRefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Menyesuaikan issued… {fmt(ttvProgress)} baris
+                      </span>
+                    ) : ttvArmed ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2 py-1 ring-1 ring-sky-200">
+                        <span className="pl-1 text-[11px] font-semibold text-sky-800">
+                          {ttvRange
+                            ? "Uji 1 pemeriksaan (5 baris) di rentang terpilih dulu?"
+                            : "Uji 1 pemeriksaan TTV terbaru (5 baris) dulu?"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => ttvRun("pilot", ttvRange)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-sky-700"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Ya, uji dulu
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTtvArmed(false)}
+                          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtvResult(null);
+                            setTtvError(null);
+                            setTtvPilotDone(false);
+                            setTtvRange(false);
+                            setTtvArmed(true);
+                          }}
+                          disabled={loading || busy}
+                          title="Isi kolom issued TTV (nadi, napas, tekanan darah, suhu) yang masih kosong dengan waktu AKTUAL dari SIMGOS (tanda_vital): jam input, tapi tak lebih awal dari jam periksa. Satu Sehat mewajibkan issued (Rule 10296). Uji 1 pemeriksaan dulu, lalu jalankan semua. DB-only, idempotent."
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          Sesuaikan Issued TTV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtvResult(null);
+                            setTtvError(null);
+                            setTtvPilotDone(false);
+                            setTtvRange(true);
+                            setTtvArmed(true);
+                          }}
+                          disabled={loading || busy || (!dateFrom && !dateTo)}
+                          title={
+                            !dateFrom && !dateTo
+                              ? "Pilih rentang tanggal dulu (di atas) untuk menyesuaikan issued hanya di rentang itu."
+                              : "Sesuaikan issued TTV HANYA untuk No. Pendaftaran dalam rentang tanggal terpilih."
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <LuDatabase className="h-3.5 w-3.5" />
+                          (rentang)
+                        </button>
+                      </div>
+                    ))}
+                  {enableTtvIssued && ttvResult != null && !ttvRunning && (
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {ttvResult.updated > 0
+                        ? `${fmt(ttvResult.updated)} baris issued disesuaikan${ttvResult.pilot ? " (uji)" : ""}`
+                        : "Tidak ada issued TTV yang perlu disesuaikan"}
+                    </span>
+                  )}
+                  {/* Pilot sukses → jalankan sisanya (scope sama dgn pilot). */}
+                  {enableTtvIssued && ttvPilotDone && !ttvRunning && !ttvArmed && (
+                    <button
+                      type="button"
+                      onClick={() => ttvRun("all", ttvRange)}
+                      disabled={loading || busy}
+                      title="Proses SEMUA TTV yang issued-nya masih kosong (per batch 2.000 baris sampai habis)."
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <LuDatabase className="h-3.5 w-3.5" />
+                      Jalankan semua sisanya{ttvRange ? " (rentang)" : ""}
+                    </button>
+                  )}
+                  {enableTtvIssued && ttvError && (
+                    <span className="text-[11px] font-medium text-red-500">{ttvError}</span>
                   )}
 
                   {/* Encounter: reconcile TERBATAS rentang tanggal terpilih —
