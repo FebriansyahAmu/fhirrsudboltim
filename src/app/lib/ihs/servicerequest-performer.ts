@@ -127,14 +127,18 @@ export function injectDefaultLabPerformer(
   const cur = payload.performer;
   if (Array.isArray(cur) && cur.length > 0) return false; // sudah ada → jangan timpa
   if (!isYear2026OrLater(nopen)) return false; // hanya 2026+
+  payload.performer = buildLabPerformers(analyst);
+  return true;
+}
 
+/** [LEAD, analis ?? analis default] — satu entri saja bila analis == lead. */
+function buildLabPerformers(analyst?: PerformerRef | null): PerformerRef[] {
   const second = analyst ?? DEFAULT_PERFORMER_ANALYST;
   const performers: PerformerRef[] = [{ ...DEFAULT_PERFORMER_LEAD }];
   if (second.reference !== DEFAULT_PERFORMER_LEAD.reference) {
     performers.push({ ...second }); // dedupe bila analis = lead
   }
-  payload.performer = performers;
-  return true;
+  return performers;
 }
 
 /**
@@ -152,4 +156,59 @@ export async function enrichLabPerformer(
   if (!isYear2026OrLater(nopen)) return false;
   const analyst = await resolveLabAnalystPerformer(refId);
   return injectDefaultLabPerformer(payload, nopen, analyst);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Observation LAB (jenis=6) — performer WAJIB (RuleNumber 10383).
+//
+// Prosedur SIMGOS `hasilLabToObservation` mengisi performer dari sumber yang SAMA
+// dengan ServiceRequest (`petugas_tindakan_medis`), formatnya
+// [Organization, Practitioner…]. Order tanpa petugas → performer NULL. Order itu
+// persis yang ServiceRequest-nya dulu terkirim lewat performer default (embed
+// read-side, DB tetap null) → Observation-nya ikut kosong.
+//
+// Isi dengan susunan yang SAMA dengan yang dikirim untuk ServiceRequest-nya:
+// Organization RS + LEAD + analis dinamis. Kunci: `observation.refId` =
+// `hasil_lab.ID` → `hasil_lab.TINDAKAN_MEDIS` = refId ServiceRequest.
+// Read-side saja (DB tak disentuh); hanya 2026+.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Sisipkan performer ke payload Observation LAB bila performer KOSONG dan tahun
+ * data >= 2026. `hasilLabId` = `observation.refId` (= `layanan.hasil_lab.ID`).
+ * Return true bila payload dimodifikasi.
+ */
+export async function enrichLabObservationPerformer(
+  payload: Record<string, unknown>,
+  nopen: string | null | undefined,
+  hasilLabId: string,
+): Promise<boolean> {
+  const cur = payload.performer;
+  if (Array.isArray(cur) && cur.length > 0) return false;
+  if (!isYear2026OrLater(nopen)) return false;
+  if (!/^\d{1,20}$/.test(hasilLabId)) return false;
+
+  const rows = await simgosQuery<{ tindakanId: string | null; org: unknown }>(
+    `SELECT hl.TINDAKAN_MEDIS AS tindakanId,
+            \`kemkes-ihs\`.getOrganization('1') AS org
+       FROM layanan.hasil_lab hl
+      WHERE hl.ID = ?
+      LIMIT 1`,
+    [hasilLabId],
+  );
+  const r = rows[0];
+  if (!r?.tindakanId) return false;
+
+  const orgRaw = typeof r.org === "string" ? JSON.parse(r.org) : r.org;
+  const orgRef =
+    orgRaw && typeof orgRaw === "object" && !Array.isArray(orgRaw)
+      ? (orgRaw as Record<string, unknown>).reference
+      : undefined;
+
+  const list = buildLabPerformers(
+    await resolveLabAnalystPerformer(String(r.tindakanId)),
+  );
+  payload.performer =
+    typeof orgRef === "string" && orgRef ? [{ reference: orgRef }, ...list] : list;
+  return true;
 }

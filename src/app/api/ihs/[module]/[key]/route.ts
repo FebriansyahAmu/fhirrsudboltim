@@ -24,7 +24,10 @@ import {
 } from "@/app/lib/ihs/composition-section";
 import { subjectRefOf } from "@/app/lib/ihs/registry";
 import type { DependsRef } from "@/app/lib/ihs/registry";
-import { enrichLabPerformer } from "@/app/lib/ihs/servicerequest-performer";
+import {
+  enrichLabObservationPerformer,
+  enrichLabPerformer,
+} from "@/app/lib/ihs/servicerequest-performer";
 
 /** Referensi (string) pada payload utk sebuah dependensi; null bila kosong. */
 function readRef(payload: Record<string, unknown>, dep: DependsRef): string | null {
@@ -344,6 +347,16 @@ export async function GET(
           if (rb.interpretation) payload.interpretation = rb.interpretation;
           else delete payload.interpretation;
           enriched.push("code");
+        }
+        // performer WAJIB (RuleNumber 10383). Order lab tanpa petugas → performer
+        // NULL (sumbernya sama dengan ServiceRequest). Dengan centang performer
+        // default, sisipkan susunan yang sama dengan ServiceRequest-nya:
+        // Organization + dr. Sp.PK + analis dinamis. Read-side, 2026+ saja.
+        if (
+          request.nextUrl.searchParams.get("performerDefault") === "1" &&
+          (await enrichLabObservationPerformer(payload, result.nopen, refId))
+        ) {
+          enriched.push("performer");
         }
       }
     }
