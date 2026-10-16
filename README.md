@@ -129,6 +129,7 @@ Hampir semua resource inti punya **halaman manual** *dan* **panel sinkronisasi S
 | Medication | `/medication` | ✓ |
 | MedicationRequest | `/medication-request` | ✓ |
 | MedicationDispense | `/medication-dispense` | ✓ |
+| MedicationStatement | `/medication-statement` | ✓ |
 | DiagnosticReport | `/diagnostic-report` | ✓ |
 | AllergyIntolerance | `/allergy` | ✓ |
 

@@ -28,6 +28,7 @@ const CLIENT_ALLOWED_RESOURCES = new Set([
   "Medication",
   "MedicationRequest",
   "MedicationDispense",
+  "MedicationStatement",
   "Observation",
   "Organization",
   "Patient",

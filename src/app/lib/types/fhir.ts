@@ -14,6 +14,7 @@ export type FhirResourceType =
   | "Medication"
   | "MedicationRequest"
   | "MedicationDispense"
+  | "MedicationStatement"
   | "AllergyIntolerance"
   | "EpisodeOfCare"
   | "DiagnosticReport"
@@ -274,6 +275,41 @@ export interface MedicationDispensePayload {
   whenPrepared?: string;
   whenHandedOver?: string;
   dosageInstruction?: unknown[];
+}
+
+// ─────────────────────────────────────────────
+// MedicationStatement (riwayat/pernyataan penggunaan obat)
+// Ref: https://www.hl7.org/fhir/medicationstatement.html
+// ─────────────────────────────────────────────
+
+export type MedicationStatementStatus =
+  | "active"
+  | "completed"
+  | "entered-in-error"
+  | "intended"
+  | "stopped"
+  | "on-hold"
+  | "unknown"
+  | "not-taken";
+
+/**
+ * Payload MedicationStatement yang dikirim ke Satu Sehat.
+ * Butuh medicationReference (Medication) & context (Encounter). Bagian
+ * dosage kompleks → dibiarkan longgar (unknown).
+ */
+export interface MedicationStatementPayload {
+  resourceType: "MedicationStatement";
+  id?: string;
+  identifier?: { system?: string; use?: string; value?: string }[];
+  status: MedicationStatementStatus;
+  category?: FhirCodeableConcept;
+  medicationReference: FhirReference;
+  subject: FhirReference;
+  context?: FhirReference;
+  effectiveDateTime?: string;
+  dateAsserted?: string;
+  informationSource?: FhirReference;
+  dosage?: unknown[];
 }
 
 // ─────────────────────────────────────────────

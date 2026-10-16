@@ -1103,6 +1103,45 @@ export const IHS_MODULES: Record<string, IhsModuleSpec> = {
     ],
   },
 
+  // ── MedicationStatement (riwayat penggunaan obat) ──
+  // Baris DIBUAT trigger `medication_dispanse_after_update` begitu
+  // MedicationDispense punya `id` (terkirim) → urutan kirim: Dispense dulu.
+  // Payload tak merujuk Dispense; butuh DUA referensi: Medication DAN Encounter
+  // (kolom `context`). PK komposit (refId, barang, group_racikan) → keyCols.
+  "medication-statement": {
+    module: "medication-statement",
+    resourceType: "MedicationStatement",
+    table: "medication_statement",
+    keyCol: "refId",
+    keyCols: ["barang", "group_racikan"],
+    keyLabel: "No. Penyerahan",
+    readyFlag: "send",
+    orderCol: "refId",
+    columns: [
+      { col: "subject", label: "Pasien", type: "text", jsonPath: "$.display" },
+      {
+        col: "medicationReference",
+        label: "Obat",
+        type: "text",
+        jsonPath: "$.display",
+      },
+      { col: "dosage", label: "Aturan Pakai", type: "text", jsonPath: "$[0].text" },
+      { col: "status", label: "Status", type: "code" },
+      { col: "nopen", label: "No. Pendaftaran", type: "code" },
+      { col: "effectiveDateTime", label: "Tanggal", type: "date" },
+    ],
+    dateKey: { kind: "yymmdd-prefix", keyLength: 10, col: "nopen" },
+    // Dua dependensi — Medication & Encounter (context).
+    dependsOn: [
+      {
+        refCol: "medicationReference",
+        refPath: "$.reference",
+        label: "Medication",
+      },
+      { refCol: "context", refPath: "$.reference", label: "Encounter" },
+    ],
+  },
+
   // ── DiagnosticReport (laporan diagnostik / hasil lab) ──
   // Laporan mengagregasi hasil Observation (result[]) dalam konteks kunjungan,
   // atas dasar ServiceRequest (basedOn) & Specimen. Butuh DUA referensi inti:

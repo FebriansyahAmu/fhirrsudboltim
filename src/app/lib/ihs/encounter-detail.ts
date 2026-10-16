@@ -452,6 +452,23 @@ const RESOURCES: DetailResourceSpec[] = [
       { label: "Diserahkan", from: [{ col: "whenHandedOver" }], type: "datetime" },
     ],
   },
+  {
+    key: "medication_statement",
+    label: "Riwayat Obat",
+    family: "Tindakan & Obat",
+    resourceType: "MedicationStatement",
+    table: "medication_statement",
+    linkCol: "nopen",
+    icon: "🗒️",
+    accent: "orange",
+    orderCol: "refId",
+    primary: { label: "Obat", from: [{ col: "medicationReference", path: "$.display" }] },
+    meta: [
+      { label: "Aturan pakai", from: [{ col: "dosage", path: "$[0].text" }] },
+      { label: "Status", from: [{ col: "status" }], type: "code" },
+      { label: "Tanggal", from: [{ col: "effectiveDateTime" }], type: "datetime" },
+    ],
+  },
 
   // ── Permintaan Layanan & Lab ─────────────────────────────
   {
